@@ -1,9 +1,8 @@
 name: Deploy Vite app to GitHub Pages
-
 on:
   push:
-    branches: [ "main" ]    # 只要 main 有變更就自動部署
-  workflow_dispatch:         # 也可以手動觸發
+    branches: [ "main" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,15 +23,20 @@ jobs:
         with:
           node-version: 20
 
-      # 依你的專案習慣選一種安裝方式：
-      # 如果你有 package-lock.json，推薦 npm ci（更快更穩）
-      - run: npm ci || npm install
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist   # Vite build 的輸出資料夾
+          path: dist
 
   deploy:
     needs: build
