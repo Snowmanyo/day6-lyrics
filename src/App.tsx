@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 //   search, JSON import/export, CSV export, localStorage persistence
 // - New: song-level audio URL, per-line start/end timestamps, play/loop line, quick set from current audio time,
 //        LRC-like bulk paste and export of timestamps
-// - Safety: no non-null assertions; guard undefined
+// - Safety: remove non-null assertions; guard undefined (fixes TS errors about possibly undefined)
 // - Seed: preload "The Day" (2015-09-07) with 6 empty songs (no lyrics)
 // - Self-tests included (plus timecode parser/formatter tests)
 
@@ -182,7 +182,7 @@ function buildTheDayAlbum(): Album {
 const DEFAULT_DATA: AppData = {
   artist: "DAY6",
   updatedAt: new Date().toISOString(),
-  version: "1.6.0",
+  version: "1.6.1",
   albums: [buildTheDayAlbum()]
 };
 
@@ -312,10 +312,12 @@ export default function App() {
   const albumsSorted = useMemo(() => [...data.albums].sort((a, b) => a.releaseDate.localeCompare(b.releaseDate)), [data.albums]);
 
   const current = useMemo(() => {
-    if (!selected) return null as { album?: Album; song?: Song } | null;
+    if (!selected) return null as { album: Album; song: Song } | null;
     const album = data.albums.find(a => a.id === selected.albumId);
-    const song = album?.songs.find(s => s.id === selected.songId);
-    return song ? ({ album, song } as { album?: Album; song: Song }) : null;
+    if (!album) return null;
+    const song = album.songs.find(s => s.id === selected.songId);
+    if (!song) return null;
+    return { album, song };
   }, [data, selected]);
 
   // ---------- CRUD & tools ----------
@@ -414,11 +416,6 @@ export default function App() {
     updateSong(song.id, { grammar: [...song.grammar, ...found] });
   }
 
-  function exportJSON() {
-    const clean = { ...data, updatedAt: new Date().toISOString() };
-    download(`day6-lyrics-${Date.now()}.json`, JSON.stringify(clean, null, 2));
-  }
-
   function importJSON(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -461,6 +458,11 @@ export default function App() {
     return results.slice(0, 200);
   }, [query, data]);
 
+  function exportJSON() {
+    const clean = { ...data, updatedAt: new Date().toISOString() };
+    download(`day6-lyrics-${Date.now()}.json`, JSON.stringify(clean, null, 2));
+  }
+
   // audio helpers
   function playLine(line: LyricLine) {
     const a = audioRef.current; if (!a) return;
@@ -485,14 +487,14 @@ export default function App() {
     }
   }
 
-  function setStartFromNow(line: LyricLine) {
-    const a = audioRef.current; if (!a) return;
-    updateSong(current!.song!.id, { lyrics: current!.song!.lyrics.map(l => l.id === line.id ? { ...l, start: a.currentTime } : l) });
-  }
-  function setEndFromNow(line: LyricLine) {
-    const a = audioRef.current; if (!a) return;
-    updateSong(current!.song!.id, { lyrics: current!.song!.lyrics.map(l => l.id === line.id ? { ...l, end: a.currentTime } : l) });
-  }
+  // function setStartFromNow(song: Song, line: LyricLine) {
+  //   const a = audioRef.current; if (!a) return;
+  //   updateSong(song.id, { lyrics: song.lyrics.map(l => l.id === line.id ? { ...l, start: a.currentTime } : l) });
+  // }
+  // function setEndFromNow(song: Song, line: LyricLine) {
+  //   const a = audioRef.current; if (!a) return;
+  //   updateSong(song.id, { lyrics: song.lyrics.map(l => l.id === line.id ? { ...l, end: a.currentTime } : l) });
+  // }
 
   function bulkPasteLRC(song: Song) {
     const raw = prompt("貼上時間戳, 格式: mm:ss(.ms) 歌詞\n例如: 01:23 첫줄\n支援: hh:mm:ss.ms 亦可; 只會寫入 start, 不改 zh");
@@ -536,7 +538,7 @@ export default function App() {
               onChange={e => setQuery(e.target.value)}
               className="w-72 rounded-xl border px-3 py-1.5 outline-none focus:ring"
             />
-            <IconButton label="匯出 JSON" onClick={() => { const clean = { ...data, updatedAt: new Date().toISOString() }; download(`day6-lyrics-${Date.now()}.json`, JSON.stringify(clean, null, 2)); }} />
+            <IconButton label="匯出 JSON" onClick={exportJSON} />
             <label className="cursor-pointer rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5">
               匯入 JSON
               <input type="file" accept="application/json" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) importJSON(f); }} />
@@ -593,129 +595,34 @@ export default function App() {
         </aside>
 
         <section className="col-span-12 lg:col-span-9">
-          {!current?.song ? (
+          {!current ? (
             <div className="text-gray-500">請從左側建立或選擇一首歌曲。</div>
           ) : (
-            <div>
-              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold">{current.song.title}</h1>
-                  <div className="text-xs text-gray-500">{current.album?.title} • {current.song.releaseDate || current.album?.releaseDate}</div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    placeholder="貼上音檔 URL (mp3, m4a, etc.)"
-                    value={current.song.audioUrl || ""}
-                    onChange={e => updateSong(current.song.id, { audioUrl: e.target.value })}
-                    className="w-72 rounded-xl border px-3 py-1.5 text-sm"
-                  />
-                  <IconButton label="貼上歌詞/翻譯" onClick={() => current.album && importLyrics(current.album.id, current.song.id)} disabled={!current.album} />
-                  <IconButton label="自動擷取詞彙" onClick={() => autoExtractVocab(current.song)} />
-                  <IconButton label="文法自動偵測" onClick={() => autoSuggestGrammar(current.song)} />
-                  <IconButton label="匯出此歌詞彙CSV" onClick={() => current.album && exportCSVVocab(current.album, current.song)} disabled={!current.album} />
-                  <IconButton label={isLoopLine ? "循環單句:開" : "循環單句:關"} onClick={() => setIsLoopLine(v => !v)} />
-                  <IconButton label="貼上時間戳(LRC)" onClick={() => bulkPasteLRC(current.song)} />
-                  <IconButton label="匯出時間戳CSV" onClick={() => exportTimestamps(current.song)} />
-                </div>
-              </div>
-
-              <div className="mb-4 rounded-xl border bg-white/70 p-3">
-                <audio ref={audioRef} src={current.song.audioUrl} controls className="w-full" preload="auto" />
-              </div>
-
-              <Section title="歌詞(中韓對照 + 時間戳)" right={
-                <div className="flex items-center gap-2 text-sm">
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={hideKor} onChange={e => setHideKor(e.target.checked)} /> 隱藏韓文</label>
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={hideZh} onChange={e => setHideZh(e.target.checked)} /> 隱藏中文</label>
-                </div>
-              }>
-                <div className="grid grid-cols-12 gap-3">
-                  {current.song.lyrics.map((line, idx) => (
-                    <div key={line.id} className={`col-span-12 grid grid-cols-12 items-start gap-2 border-b py-2 ${activeLineId === line.id ? 'bg-amber-50' : ''}`}>
-                      <div className="col-span-3 flex items-center gap-1">
-                        <input
-                          placeholder="start 01:23.456"
-                          value={formatTimecode(line.start)}
-                          onChange={e => {
-                            const v = parseTimecode(e.target.value);
-                            const next = [...current.song.lyrics];
-                            next[idx] = { ...line, start: v ?? undefined };
-                            updateSong(current.song.id, { lyrics: next });
-                          }}
-                          className="w-28 rounded-lg border px-2 py-1 text-sm"
-                        />
-                        <span>-</span>
-                        <input
-                          placeholder="end 01:25.000"
-                          value={formatTimecode(line.end)}
-                          onChange={e => {
-                            const v = parseTimecode(e.target.value);
-                            const next = [...current.song.lyrics];
-                            next[idx] = { ...line, end: v ?? undefined };
-                            updateSong(current.song.id, { lyrics: next });
-                          }}
-                          className="w-28 rounded-lg border px-2 py-1 text-sm"
-                        />
-                        <IconButton label="Set⟲" onClick={() => setStartFromNow(line)} />
-                        <IconButton label="Set⟶" onClick={() => setEndFromNow(line)} />
-                        <IconButton label="▶︎" onClick={() => playLine(line)} />
-                      </div>
-                      <div className="col-span-4 whitespace-pre-wrap leading-relaxed">
-                        {hideKor ? (
-                          <span className="text-gray-400">••••••</span>
-                        ) : (
-                          <textarea
-                            value={line.kor}
-                            onChange={e => { const next = [...current.song.lyrics]; next[idx] = { ...line, kor: e.target.value }; updateSong(current.song.id, { lyrics: next }); }}
-                            className="w-full resize-y bg-transparent outline-none"
-                            rows={Math.max(1, line.kor.split(/\n/).length)}
-                          />
-                        )}
-                      </div>
-                      <div className="col-span-4 whitespace-pre-wrap leading-relaxed">
-                        {hideZh ? (
-                          <span className="text-gray-400">──────</span>
-                        ) : (
-                          <textarea
-                            value={line.zh}
-                            onChange={e => { const next = [...current.song.lyrics]; next[idx] = { ...line, zh: e.target.value }; updateSong(current.song.id, { lyrics: next }); }}
-                            className="w-full resize-y bg-transparent outline-none"
-                            rows={Math.max(1, line.zh.split(/\n/).length)}
-                          />
-                        )}
-                      </div>
-                      <div className="col-span-1 flex items-center justify-end gap-2">
-                        <IconButton label="+行" onClick={() => addLyricLine(current.song, idx)} />
-                        <IconButton label="刪" onClick={() => removeLyricLine(current.song, line.id)} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="詞彙表(可編輯)" right={<IconButton label="匯出此歌詞彙CSV" onClick={() => current.album && exportCSVVocab(current.album, current.song)} disabled={!current.album} />}>
-                <VocabEditor song={current.song} onChange={next => updateSong(current.song.id, { vocab: next })} />
-              </Section>
-
-              <Section title="文法點(可新增例句)">
-                <GrammarEditor song={current.song} onChange={next => updateSong(current.song.id, { grammar: next })} />
-              </Section>
-
-              <Section title="統計與自我測試(Self-tests)">
-                <StatsAndStudy song={current.song} />
-                <div className="mt-4 rounded-xl border bg-white/70 p-3">
-                  <div className="mb-2 text-sm font-medium">內建測試結果</div>
-                  <ul className="space-y-1 text-sm">
-                    {tests.map((t, i) => (
-                      <li key={i} className={t.passed ? "text-emerald-700" : "text-red-700"}>
-                        {t.passed ? "✓" : "✗"} {t.name} - {t.message}
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="mt-2"><IconButton label="重新執行測試" onClick={() => setTests(runSelfTests())} /></div>
-                </div>
-              </Section>
-            </div>
+            <SongPanel
+              album={current.album}
+              song={current.song}
+              hideKor={hideKor}
+              setHideKor={setHideKor}
+              hideZh={hideZh}
+              setHideZh={setHideZh}
+              isLoopLine={isLoopLine}
+              setIsLoopLine={setIsLoopLine}
+              audioRef={audioRef}
+              activeLineId={activeLineId}
+              setActiveLineId={setActiveLineId}
+              updateSong={updateSong}
+              importLyrics={importLyrics}
+              autoExtractVocab={autoExtractVocab}
+              autoSuggestGrammar={autoSuggestGrammar}
+              exportCSVVocab={exportCSVVocab}
+              bulkPasteLRC={bulkPasteLRC}
+              exportTimestamps={exportTimestamps}
+              removeLyricLine={removeLyricLine}
+              addLyricLine={addLyricLine}
+              playLine={playLine}
+              tests={tests}
+              onRerunTests={() => setTests(runSelfTests())}
+            />
           )}
         </section>
       </main>
@@ -728,6 +635,189 @@ export default function App() {
 }
 
 // ===================== Subcomponents =====================
+
+function SongPanel({
+  album,
+  song,
+  hideKor,
+  setHideKor,
+  hideZh,
+  setHideZh,
+  isLoopLine,
+  setIsLoopLine,
+  audioRef,
+  activeLineId,
+  updateSong,
+  importLyrics,
+  autoExtractVocab,
+  autoSuggestGrammar,
+  exportCSVVocab,
+  bulkPasteLRC,
+  exportTimestamps,
+  removeLyricLine,
+  addLyricLine,
+  playLine,
+  tests,
+  onRerunTests,
+}: {
+  album: Album;
+  song: Song;
+  hideKor: boolean;
+  setHideKor: (v: boolean) => void;
+  hideZh: boolean;
+  setHideZh: (v: boolean) => void;
+  isLoopLine: boolean;
+  setIsLoopLine: React.Dispatch<React.SetStateAction<boolean>>;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
+  activeLineId: string | null;
+  setActiveLineId: (id: string | null) => void;
+  updateSong: (songId: string, patch: Partial<Song>) => void;
+  importLyrics: (albumId: string, songId: string) => void;
+  autoExtractVocab: (s: Song) => void;
+  autoSuggestGrammar: (s: Song) => void;
+  exportCSVVocab: (a?: Album, s?: Song) => void;
+  bulkPasteLRC: (s: Song) => void;
+  exportTimestamps: (s: Song) => void;
+  removeLyricLine: (s: Song, lineId: string) => void;
+  addLyricLine: (s: Song, idx: number) => void;
+  playLine: (line: LyricLine) => void;
+  tests: TestResult[];
+  onRerunTests: () => void;
+}) {
+  return (
+    <div>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{song.title}</h1>
+          <div className="text-xs text-gray-500">{album?.title} • {song.releaseDate || album?.releaseDate}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            placeholder="貼上音檔 URL (mp3, m4a, etc.)"
+            value={song.audioUrl || ""}
+            onChange={e => updateSong(song.id, { audioUrl: e.target.value })}
+            className="w-72 rounded-xl border px-3 py-1.5 text-sm"
+          />
+          <IconButton label="貼上歌詞/翻譯" onClick={() => importLyrics(album.id, song.id)} />
+          <IconButton label="自動擷取詞彙" onClick={() => autoExtractVocab(song)} />
+          <IconButton label="文法自動偵測" onClick={() => autoSuggestGrammar(song)} />
+          <IconButton label="匯出此歌詞彙CSV" onClick={() => exportCSVVocab(album, song)} />
+          <IconButton label={isLoopLine ? "循環單句:開" : "循環單句:關"} onClick={() => setIsLoopLine(v => !v)} />
+          <IconButton label="貼上時間戳(LRC)" onClick={() => bulkPasteLRC(song)} />
+          <IconButton label="匯出時間戳CSV" onClick={() => exportTimestamps(song)} />
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border bg-white/70 p-3">
+        <audio ref={audioRef} src={song.audioUrl} controls className="w-full" preload="auto" />
+      </div>
+
+      <Section title="歌詞(中韓對照 + 時間戳)" right={
+        <div className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-1"><input type="checkbox" checked={hideKor} onChange={e => setHideKor(e.target.checked)} /> 隱藏韓文</label>
+          <label className="flex items-center gap-1"><input type="checkbox" checked={hideZh} onChange={e => setHideZh(e.target.checked)} /> 隱藏中文</label>
+        </div>
+      }>
+        <div className="grid grid-cols-12 gap-3">
+          {song.lyrics.map((line, idx) => (
+            <div key={line.id} className={`col-span-12 grid grid-cols-12 items-start gap-2 border-b py-2 ${activeLineId === line.id ? 'bg-amber-50' : ''}`}>
+              <div className="col-span-3 flex items-center gap-1">
+                <input
+                  placeholder="start 01:23.456"
+                  value={formatTimecode(line.start)}
+                  onChange={e => {
+                    const v = parseTimecode(e.target.value);
+                    const next = [...song.lyrics];
+                    next[idx] = { ...line, start: v ?? undefined };
+                    updateSong(song.id, { lyrics: next });
+                  }}
+                  className="w-28 rounded-lg border px-2 py-1 text-sm"
+                />
+                <span>-</span>
+                <input
+                  placeholder="end 01:25.000"
+                  value={formatTimecode(line.end)}
+                  onChange={e => {
+                    const v = parseTimecode(e.target.value);
+                    const next = [...song.lyrics];
+                    next[idx] = { ...line, end: v ?? undefined };
+                    updateSong(song.id, { lyrics: next });
+                  }}
+                  className="w-28 rounded-lg border px-2 py-1 text-sm"
+                />
+                <IconButton label="Set⟲" onClick={() => {
+                  const a = audioRef.current; if (!a) return;
+                  updateSong(song.id, { lyrics: song.lyrics.map(l => l.id === line.id ? { ...l, start: a.currentTime } : l) });
+                }} />
+                <IconButton label="Set⟶" onClick={() => {
+                  const a = audioRef.current; if (!a) return;
+                  updateSong(song.id, { lyrics: song.lyrics.map(l => l.id === line.id ? { ...l, end: a.currentTime } : l) });
+                }} />
+                <IconButton label="▶︎" onClick={() => playLine(line)} />
+              </div>
+              <div className="col-span-4 whitespace-pre-wrap leading-relaxed">
+                {hideKor ? (
+                  <span className="text-gray-400">••••••</span>
+                ) : (
+                  <textarea
+                    value={line.kor}
+                    onChange={e => { const next = [...song.lyrics]; next[idx] = { ...line, kor: e.target.value }; updateSong(song.id, { lyrics: next }); }}
+                    className="w-full resize-y bg-transparent outline-none"
+                    rows={Math.max(1, (line.kor ?? '').split(/\r?\n/).length)}
+
+                  />
+                )}
+              </div>
+              <div className="col-span-4 whitespace-pre-wrap leading-relaxed">
+                {hideZh ? (
+                  <span className="text-gray-400">──────</span>
+                ) : (
+                  <textarea
+                    value={line.zh}
+                    onChange={e => { const next = [...song.lyrics]; next[idx] = { ...line, zh: e.target.value }; updateSong(song.id, { lyrics: next }); }}
+                    className="w-full resize-y bg-transparent outline-none"
+                    rows={Math.max(1, (line.zh ?? '').split(/\r?\n/).length)}
+
+                  />
+                )}
+              </div>
+              <div className="col-span-1 flex items-center justify-end gap-2">
+                <IconButton label="+行" onClick={() => addLyricLine(song, idx)} />
+                <IconButton label="刪" onClick={() => removeLyricLine(song, line.id)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="詞彙表(可編輯)" right={<IconButton label="匯出此歌詞彙CSV" onClick={() => exportCSVVocab(album, song)} />}>
+        <VocabEditor song={song} onChange={next => updateSong(song.id, { vocab: next })} />
+      </Section>
+
+      <Section title="文法點(可新增例句)">
+        <GrammarEditor song={song} onChange={next => updateSong(song.id, { grammar: next })} />
+      </Section>
+
+      <Section title="統計與自我測試(Self-tests)">
+        <StatsAndStudy song={song} />
+        <div className="mt-4 rounded-xl border bg-white/70 p-3">
+          <div className="mb-2 text-sm font-medium">內建測試結果</div>
+          <ul className="space-y-1 text-sm">
+            {tests.map((t, i) => (
+              <li key={i} className={t.passed ? "text-emerald-700" : "text-red-700"}>
+                {t.passed ? "✓" : "✗"} {t.name} - {t.message}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2"><IconButton label="重新執行測試" onClick={onRerunTests} /></div>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+// (以下為原有子元件)
+
 
 function VocabEditor({ song, onChange }: { song: Song; onChange: (v: VocabItem[]) => void }) {
   const [filter, setFilter] = useState("");
