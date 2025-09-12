@@ -117,7 +117,7 @@ function Modal({ open, onClose, children, title }: { open: boolean; onClose: () 
 // ===================== Sidebar (desktop) & Drawer (mobile) =====================
 function DesktopSidebar({
   data, selected, onSelect, onOpenAddAlbum,
-  onOpenEditSongs, onReorderAlbum, onReorderSong, onDeleteSong
+  onOpenEditSongs, onReorderAlbum, onReorderSong
 }: {
   data: AppData;
   selected: { albumId: string; songId: string } | null;
@@ -126,19 +126,42 @@ function DesktopSidebar({
   onOpenEditSongs: (albumId: string) => void;
   onReorderAlbum: (from: number, to: number) => void;
   onReorderSong: (albumId: string, from: number, to: number) => void;
-  onDeleteSong: (albumId: string, songId: string) => void;
 }) {
   return (
-    <div className="h-full overflow-hidden">
-      <div className="flex items-center justify-between border-b p-3 dark:border-zinc-800">
-        <div className="font-semibold">專輯 / 歌曲</div>
+    <aside className="w-80 shrink-0 overflow-y-auto border-r p-3 dark:border-zinc-800">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-semibold">專輯 / 歌曲</div>
         <div className="flex gap-2">
-          <button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 專輯</button>
+          <button
+            onClick={onOpenAddAlbum}
+            className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+          >
+            + 專輯
+          </button>
         </div>
       </div>
-      <div className="h-[calc(100%-49px)] space-y-3 overflow-auto p-2">
+
+      <div className="space-y-3">
         {data.albums.map((a, albumIdx) => (
-          <div key={a.id} className="rounded-xl border p-2 dark:border-zinc-800">
+          <div
+            key={a.id}
+            className="rounded-xl border p-2 dark:border-zinc-800"
+            draggable
+            onDragStart={(e)=>{ 
+              e.dataTransfer.setData('type','album'); 
+              e.dataTransfer.setData('from', String(albumIdx)); 
+            }}
+            onDragOver={(e)=>{ 
+              if (e.dataTransfer.getData('type')==='album') e.preventDefault(); 
+            }}
+            onDrop={(e)=>{ 
+              const t = e.dataTransfer.getData('type'); 
+              if (t==='album') {
+                const from = Number(e.dataTransfer.getData('from'));
+                onReorderAlbum(from, albumIdx);
+              }
+            }}
+          >
             <div className="mb-1 flex items-center justify-between">
               <div>
                 <div className="font-medium">{a.title}</div>
@@ -146,30 +169,42 @@ function DesktopSidebar({
               </div>
               <button
                 onClick={()=>onOpenEditSongs(a.id)}
-                className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">編輯</button>
-              </div>
+                className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+              >
+                編輯
+              </button>
+            </div>
+
             <ul className="space-y-1">
-                {a.songs.map((s, songIdx) => (
-            <li
-              key={s.id}
-              draggable
-              onDragStart={(e)=>{ e.dataTransfer.setData('type','song'); e.dataTransfer.setData('aid', a.id); e.dataTransfer.setData('from', String(songIdx)); }}
-              onDragOver={(e)=>{ 
-                const t = e.dataTransfer.getData('type');
-                const aid = e.dataTransfer.getData('aid');
-                if (t==='song' && aid===a.id) e.preventDefault(); // 限同專輯排序
-              }}
-              onDrop={(e)=>{ 
-                const t = e.dataTransfer.getData('type');
-                const aid = e.dataTransfer.getData('aid');
-                if (t==='song' && aid===a.id) {
-                  const from = Number(e.dataTransfer.getData('from'));
-                  onReorderSong(a.id, from, songIdx);
-                }
-              }}
-            >
-                  <button onClick={()=>onSelect(a.id, s.id)} className={`w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}>
-                    <div className="truncate">{s.title}</div>
+              {a.songs.map((s, songIdx) => (
+                <li
+                  key={s.id}
+                  draggable
+                  onDragStart={(e)=>{ 
+                    e.dataTransfer.setData('type','song'); 
+                    e.dataTransfer.setData('aid', a.id); 
+                    e.dataTransfer.setData('from', String(songIdx)); 
+                  }}
+                  onDragOver={(e)=>{ 
+                    const t = e.dataTransfer.getData('type');
+                    const aid = e.dataTransfer.getData('aid');
+                    if (t==='song' && aid===a.id) e.preventDefault(); // 僅同專輯內排序
+                  }}
+                  onDrop={(e)=>{ 
+                    const t = e.dataTransfer.getData('type');
+                    const aid = e.dataTransfer.getData('aid');
+                    if (t==='song' && aid===a.id) {
+                      const from = Number(e.dataTransfer.getData('from'));
+                      onReorderSong(a.id, from, songIdx);
+                    }
+                  }}
+                >
+                  <button
+                    onClick={()=>onSelect(a.id, s.id)}
+                    className={`w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}
+                    title="拖曳以排序"
+                  >
+                    <div className="truncate">⋮⋮ {s.title}</div>
                   </button>
                 </li>
               ))}
@@ -177,9 +212,10 @@ function DesktopSidebar({
           </div>
         ))}
       </div>
-    </div>
+    </aside>
   );
 }
+
 
 
 function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong }: {
@@ -452,6 +488,7 @@ function deleteSong(albumId: string, songId: string) {
   const [query, setQuery] = useState("");
 
   // add modals
+const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(...);
 const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs'; albumId?: string }>({ type: null });
 
   // remember dark + sidebar
@@ -607,8 +644,8 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
               onOpenEditSongs={(aid)=>setModal({ type: 'edit-songs', albumId: aid })}
               onReorderAlbum={reorderAlbum}
               onReorderSong={reorderSong}
-              onDeleteSong={deleteSong}
-            />
+              />
+
 
             </div>
           )}
@@ -737,7 +774,7 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
   );
 }
 
-/* ===== Edit Songs (per album) ===== */
+{/* ===== Edit Songs (per album) ===== */}
 {modal.type === 'edit-songs' && (
   <Modal
     open={true}
@@ -760,7 +797,7 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
                 >前往</button>
                 <button
                   className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
-                  onClick={()=>onDeleteSong(album.id, s.id)}
+                  onClick={()=>deleteSong(album.id, s.id)}
                 >刪除</button>
               </div>
             </div>
@@ -771,6 +808,7 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
     })()}
   </Modal>
 )}
+
 
 function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { open: boolean; onClose: () => void; onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) => void; albums: Album[]; defaultAlbumId?: string }) {
   const [albumId, setAlbumId] = useState<string>(defaultAlbumId || albums[0]?.id || "");
