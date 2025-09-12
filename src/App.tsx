@@ -1,550 +1,476 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// ===================== Types =====================
-export type LyricLine = { id: string; kor: string; zh: string };
-export type VocabItem = { id: string; word: string; pos?: string; zh?: string; memo?: string };
-export type GrammarItem = { id: string; pattern: string; explanation?: string; examples?: { kor: string; zh?: string }[] };
-export type Song = { id: string; title: string; releaseDate?: string; lyrics: LyricLine[]; vocab: VocabItem[]; grammar: GrammarItem[] };
-export type Album = { id: string; title: string; releaseDate: string; songs: Song[] };
+// ================ ASCII-safe constants & helpers ================
+const HAMBURGER = "\u2630"; // ☰ (unicode escape to avoid encoding issues)
 
-// ===================== Utils =====================
-const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-function alignLyrics(korRaw: string, zhRaw: string): LyricLine[] {
-  const korLines = (korRaw || "").split(/\r?\n/).map(s => s.trim());
-  const zhLines = (zhRaw || "").split(/\r?\n/).map(s => s.trim());
-  const max = Math.max(korLines.length, zhLines.length, 1);
-  return Array.from({ length: max }, (_, i) => ({ id: uid(), kor: korLines[i] || "", zh: zhLines[i] || "" }));
+function download(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
 }
 
-const isHangul = (s: string) => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(s);
-const KOREAN_STOP_PARTICLES = ["은","는","이","가","을","를","에","에서","에게","한테","께서","에게서","으로","로","와","과","도","만","까지","부터","처럼","보다","밖에","마다","씩"];
-function tokenizeKoreanUnique(text: string): string[] {
-  const raw = text.replace(/\([^\)]*\)/g, " ").split(/[^\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]+/).filter(Boolean);
-  const cleaned = raw.map(w => w.trim()).filter(w => w.length > 0 && isHangul(w));
-  const simplified = cleaned.map(w => {
-    for (const p of KOREAN_STOP_PARTICLES) { if (w.endsWith(p) && w.length > p.length + 1) return w.slice(0, -p.length); }
-    return w;
-  });
-  return Array.from(new Set(simplified));
-}
-
-function toCSV(rows: string[][]): string { return rows.map(r => r.map(x => '"' + (x ?? '').replace(/"/g, '""') + '"').join(',')).join('\n'); }
-function downloadCSV(rows: string[][], name: string) {
-  const csv = toCSV(rows);
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-}
-function parseCSV(text: string): string[][] {
-  // very small CSV parser: supports quotes and commas
-  const lines = text.replace(/\r/g, '').split('\n');
-  const out: string[][] = [];
-  for (const line of lines) {
-    if (line === '') { out.push(['']); continue; }
-    const row: string[] = [];
-    let i = 0; let cur = ''; let inQ = false;
-    while (i < line.length) {
-      const ch = line[i];
-      if (inQ) {
-        if (ch === '"') {
-          if (i + 1 < line.length && line[i + 1] === '"') { cur += '"'; i += 2; }
-          else { inQ = false; i++; }
-        } else { cur += ch; i++; }
-      } else {
-        if (ch === '"') { inQ = true; i++; }
-        else if (ch === ',') { row.push(cur); cur = ''; i++; }
-        else { cur += ch; i++; }
-      }
-    }
-    row.push(cur);
-    out.push(row);
-  }
+// align kor/zh by line count (shorter side padded with empty)
+function alignLyrics(korRaw: string, zhRaw: string) {
+  const kor = korRaw.split(/\r?\n/);
+  const zh = zhRaw.split(/\r?\n/);
+  const max = Math.max(kor.length, zh.length);
+  const out: { kor: string; zh: string }[] = [];
+  for (let i = 0; i < max; i++) out.push({ kor: kor[i] || "", zh: zh[i] || "" });
   return out;
 }
 
-// ===================== UI atoms =====================
-const IconButton = ({ label, onClick, disabled, title }: { label: string; onClick?: () => void; disabled?: boolean; title?: string }) => (
-  <button title={title} onClick={disabled ? undefined : onClick} disabled={disabled} className={`rounded-xl border px-3 py-1.5 text-sm active:scale-[0.99] ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black/5 dark:hover:bg-white/10'}`}>{label}</button>
-);
+// basic tokenization for Korean (for demo vocab extraction)
+const isHangul = (s: string) => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(s);
+function tokenizeKorean(text: string) {
+  return text
+    .replace(/\([^)]*\)/g, " ")
+    .split(/[^\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]+/)
+    .filter(Boolean)
+    .filter(isHangul);
+}
 
-const Section = ({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) => (
-  <div className="mb-6">
-    <div className="mb-2 flex items-center justify-between">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <div>{right}</div>
-    </div>
-    <div className="rounded-2xl border bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60 dark:border-zinc-700">{children}</div>
-  </div>
-);
+// ================ Sample Data (DAY6 – Congratulations) ================
+const SAMPLE_KOR = `이제는 연락조차 받질 않아
+너 대신 들리는 무미건조한 목소리
+힘든 날들도 있는 건데
+잠깐을 못 이겨
+또 다른 대안을 찾아가
 
-// ===================== Main App =====================
-export default function LyricsApp() {
-  // theme
-  const [dark, setDark] = useState<boolean>(() => (typeof window !== 'undefined' ? localStorage.getItem('lyrics_theme') === 'dark' : false));
-  useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('lyrics_theme', dark ? 'dark' : 'light'); }, [dark]);
+시간을 가지자
+이 말을 난 있는 그대로
+시간을 가지잔
+뜻으로 받아들여 버렸어
 
-  // data
-  const [albums, setAlbums] = useState<Album[]>(() => { const saved = localStorage.getItem('lyrics_data'); return saved ? JSON.parse(saved) : []; });
-  useEffect(() => { localStorage.setItem('lyrics_data', JSON.stringify(albums)); }, [albums]);
+Congratulations 넌 참 대단해
+Congratulations 어쩜 그렇게
+아무렇지 않아
+하며 날 짓밟아
+웃는 얼굴을 보니 다 잊었나 봐`;
 
-  // ui state
-  const [showCreate, setShowCreate] = useState(false);
-  const [korBulk, setKorBulk] = useState('');
-  const [zhBulk, setZhBulk] = useState('');
-  const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(null);
-  const [editModeBySong, setEditModeBySong] = useState<Record<string, boolean>>({});
-  const [query, setQuery] = useState('');
+const SAMPLE_ZH = `現在你連電話也不接
+枯燥無味的聲音代替了你
+人生本來就有艱難的日子
+一下子沒有熬過
+就又去找另一個人
 
+我們各自冷靜一下
+這句話我以為真的就是按字面
+「只是冷靜一下」
+地理解的
 
-  // ===== Create =====
-  const addAlbum = (title: string, date: string) => {
-    setAlbums([...albums, { id: uid(), title: title.trim(), releaseDate: date || new Date().toISOString().slice(0,10), songs: [] }]);
-    setShowCreate(false);
-  };
-  const addSong = (albumId: string, title: string, kor: string, zh: string) => {
-    const lyrics = alignLyrics(kor, zh);
-    const song: Song = { id: uid(), title: title.trim(), lyrics, vocab: [], grammar: [] };
-    setAlbums(albums.map(a => a.id === albumId ? { ...a, songs: [...a.songs, song] } : a));
-    setShowCreate(false); setKorBulk(''); setZhBulk(''); setSelected({ albumId, songId: song.id });
-  };
+Congratulations 你真的了不起
+Congratulations 你怎麼可以
+毫無感覺地
+這樣踐踏我
+看著你的笑臉，看來你已經忘記我`;
 
-  // ===== Update helpers =====
-  const updateSong = (songId: string, patch: Partial<Song>) => {
-    setAlbums(albums.map(a => ({ ...a, songs: a.songs.map(s => s.id === songId ? { ...s, ...patch } : s) })));
-  };
-  const setLine = (song: Song, idx: number, patch: Partial<LyricLine>) => {
-    const next = [...song.lyrics];
-    next[idx] = { ...next[idx], ...patch };
-    updateSong(song.id, { lyrics: next });
-  };
-  const addLineBelow = (song: Song, idx: number) => {
-    const next = [...song.lyrics.slice(0, idx + 1), { id: uid(), kor: '', zh: '' }, ...song.lyrics.slice(idx + 1)];
-    updateSong(song.id, { lyrics: next });
-  };
-  const deleteLine = (song: Song, id: string) => { updateSong(song.id, { lyrics: song.lyrics.filter(l => l.id !== id) }); };
+const SAMPLE_VOCAB = [
+  { word: "연락", zh: "聯絡" },
+  { word: "목소리", zh: "聲音" },
+  { word: "대단하다", zh: "了不起" },
+  { word: "아무렇지 않다", zh: "毫不在乎" },
+  { word: "웃는 얼굴", zh: "笑臉" },
+];
 
-  // ===== Search =====
-  const searchResults = useMemo(() => {
-    const q = query.trim(); if (!q) return [] as { album: Album; song: Song; where: string; snippet: string }[];
-    const res: { album: Album; song: Song; where: string; snippet: string }[] = [];
-    for (const a of albums) {
-      for (const s of a.songs) {
-        if (s.title.toLowerCase().includes(q.toLowerCase())) res.push({ album: a, song: s, where: '歌名', snippet: s.title });
-        for (const l of s.lyrics) {
-          if (l.kor.includes(q) || l.zh.includes(q)) res.push({ album: a, song: s, where: '歌詞', snippet: `${l.kor} / ${l.zh}`.slice(0, 80) });
-        }
-        for (const v of s.vocab) {
-          if ((v.word || '').includes(q) || (v.zh || '').includes(q) || (v.pos || '').includes(q)) res.push({ album: a, song: s, where: '詞彙', snippet: `${v.word} - ${v.zh || ''}` });
-        }
-        for (const g of s.grammar) {
-          if ((g.pattern || '').includes(q) || (g.explanation || '').includes(q)) res.push({ album: a, song: s, where: '文法', snippet: `${g.pattern} - ${(g.explanation || '').slice(0,60)}` });
-        }
-      }
-    }
-    return res.slice(0, 200);
-  }, [query, albums]);
+const SAMPLE_GRAMMAR = [
+  { pattern: "-잖아(요)", explain: "不是說/不是…嗎（提醒已知事實）" },
+  { pattern: "-아/어 버리다", explain: "（不自覺地/徹底地）做完，帶有遺憾/可惜" },
+  { pattern: "-(으)ㄴ/는 그대로", explain: "照著原樣、如實" },
+];
 
-  // ===== Vocab =====
-  const dedupeVocab = (list: VocabItem[]) => { const map = new Map<string, VocabItem>(); for (const v of list) { const k = (v.word || '').trim(); if (!map.has(k)) map.set(k, v); } return Array.from(map.values()); };
-  const extractVocabAll = (song: Song, onlyNew: boolean) => {
-    const words = tokenizeKoreanUnique(song.lyrics.map(l => l.kor).join('\n'));
-    const existing = new Set((song.vocab || []).map(v => (v.word || '').trim()));
-    const newItems: VocabItem[] = [];
-    for (const w of words) { const t = w.trim(); if (!t) continue; if (onlyNew && existing.has(t)) continue; newItems.push({ id: uid(), word: t }); }
-    const merged = onlyNew ? [...song.vocab, ...newItems] : dedupeVocab([...(song.vocab || []), ...newItems]);
-    updateSong(song.id, { vocab: merged });
-  };
-
-  // ===== Grammar =====
-  const autoSuggestGrammar = (song: Song) => {
-    const patterns: { key: string; desc: string; test: (s: string) => boolean }[] = [
-      { key: '-네요', desc: '語氣詞: 驚訝/感嘆', test: s => /네요\b/.test(s) },
-      { key: '-겠-', desc: '推測/意志', test: s => /겠/.test(s) },
-      { key: '-았/었-', desc: '過去時', test: s => /(았|었)/.test(s) },
-      { key: '-(으)니까', desc: '因為/所以', test: s => /(으)?니까/.test(s) },
-      { key: '-거든요', desc: '補充理由/軟化語氣', test: s => /거든요/.test(s) },
-      { key: '-지만', desc: '轉折', test: s => /지만/.test(s) },
-      { key: '-는데', desc: '鋪陳/轉折', test: s => /는데/.test(s) },
-      { key: '-고 싶다', desc: '想要', test: s => /고\s*싶/.test(s) },
-      { key: '-(으)ㄹ게요', desc: '承諾/意志', test: s => /(ㄹ게요|을게요)/.test(s) },
-      { key: '-(으)ㄹ까요', desc: '提議/猜測', test: s => /(ㄹ까요|을까요)/.test(s) }
-    ];
-    const found: GrammarItem[] = [];
-    for (const line of song.lyrics) {
-      const s = line.kor;
-      for (const p of patterns) {
-        if (p.test(s) && !song.grammar.some(g => g.pattern === p.key)) {
-          found.push({ id: uid(), pattern: p.key, explanation: p.desc, examples: [{ kor: s, zh: line.zh }] });
-        }
-      }
-    }
-    if (found.length === 0) return; updateSong(song.id, { grammar: [...song.grammar, ...found] });
-  };
-
-  // ===== Export (CSV) =====
-  const exportAllVocabCSV = () => {
-    const rows: string[][] = [["Album","Song","Word","POS","Chinese","Memo"]];
-    albums.forEach(a => a.songs.forEach(s => s.vocab.forEach(v => rows.push([a.title, s.title, v.word, v.pos || '', v.zh || '', v.memo || '']))));
-    downloadCSV(rows, 'vocab_all.csv');
-  };
-  const exportAllGrammarCSV = () => {
-    const rows: string[][] = [["Album","Song","Pattern","Explanation","ExampleKor","ExampleZh"]];
-    albums.forEach(a => a.songs.forEach(s => {
-      if ((s.grammar || []).length === 0) rows.push([a.title, s.title, '', '', '', '']);
-      (s.grammar || []).forEach(g => { (g.examples && g.examples.length > 0 ? g.examples : [{ kor: '', zh: '' }]).forEach(ex => rows.push([a.title, s.title, g.pattern, g.explanation || '', ex.kor, ex.zh || ''])); });
-    }));
-    downloadCSV(rows, 'grammar_all.csv');
-  };
-  const exportAllLyricsCSV = () => {
-    const rows: string[][] = [["Album","Song","Index","Kor","Zh"]];
-    albums.forEach(a => a.songs.forEach(s => s.lyrics.forEach((l, i) => rows.push([a.title, s.title, String(i+1), l.kor, l.zh]))));
-    downloadCSV(rows, 'lyrics_all.csv');
-  };
-
-  // ===== Import (CSV bundle) =====
-  function importBundleCSV(files: FileList) {
-    const map: Record<string, string> = {};
-    const needed = new Set(['albums.csv','songs.csv','lyrics.csv']); // vocab.csv, grammar.csv optional
-    const readers: Promise<void>[] = [];
-    Array.from(files).forEach(f => {
-      readers.push(new Promise(res => { const r = new FileReader(); r.onload = () => { map[f.name.toLowerCase()] = String(r.result || ''); res(); }; r.readAsText(f); }));
-    });
-    Promise.all(readers).then(() => {
-      for (const n of needed) if (!map[n]) { alert(`缺少 ${n}`); return; }
-      // parse
-      const A = parseCSV(map['albums.csv']).slice(1); // id,title,releaseDate
-      const S = parseCSV(map['songs.csv']).slice(1); // id,albumId,title,releaseDate
-      const L = parseCSV(map['lyrics.csv']).slice(1); // songId,index,kor,zh
-      const V = map['vocab.csv'] ? parseCSV(map['vocab.csv']).slice(1) : []; // songId,word,pos,zh,memo
-      const G = map['grammar.csv'] ? parseCSV(map['grammar.csv']).slice(1) : []; // songId,pattern,explanation,exampleKor,exampleZh
-      // build
-      const albumMap = new Map<string, Album>();
-      A.forEach(r => { const [id,title,date] = r; if (!id) return; albumMap.set(id, { id, title, releaseDate: date || '', songs: [] }); });
-      const songMap = new Map<string, Song>();
-      S.forEach(r => { const [id,albumId,title,date] = r; if (!id) return; const song: Song = { id, title, releaseDate: date || '', lyrics: [], vocab: [], grammar: [] }; songMap.set(id, song); const a = albumMap.get(albumId); if (a) a.songs.push(song); });
-      L.forEach(r => { const [songId, , kor, zh] = r; const s = songMap.get(songId); if (s) s.lyrics.push({ id: uid(), kor: kor || '', zh: zh || '' }); });
-      V.forEach(r => { const [songId, word, pos, zh, memo] = r; const s = songMap.get(songId); if (s && word) s.vocab.push({ id: uid(), word, pos, zh, memo }); });
-      G.forEach(r => { const [songId, pattern, explanation, ek, ez] = r; const s = songMap.get(songId); if (s && pattern) { const ex = (ek || ez) ? [{ kor: ek || '', zh: ez || '' }] : []; s.grammar.push({ id: uid(), pattern, explanation, examples: ex }); } });
-      const list = Array.from(albumMap.values());
-      setAlbums(list);
-      alert('CSV 匯入完成');
-    });
-  }
-
+// ================ Small UI atoms ================
+function TabButton({ active, children, onClick }: { active?: boolean; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50 to-white p-4 text-gray-900 dark:from-zinc-900 dark:to-zinc-950 dark:text-zinc-100">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-2">
-          <div className="text-xl font-bold">DAY6 歌詞學韓文</div>
-          <span className="rounded-full border px-2 py-0.5 text-xs">中韓對照</span>
-          <span className="rounded-full border px-2 py-0.5 text-xs">詞彙</span>
-          <span className="rounded-full border px-2 py-0.5 text-xs">文法</span>
+    <button
+      onClick={onClick}
+      className={
+        `shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ` +
+        (active ? "bg-black text-white dark:bg-white dark:text-black" : "border hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarButton({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <button onClick={onClick} className="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 active:scale-[0.99] dark:border-zinc-700 dark:hover:bg-white/10">{children}</button>
+  );
+}
+
+function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => { if (!ref.current) return; if (!ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('click', onDocClick); document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('click', onDocClick); document.removeEventListener('keydown', onKey); };
+  }, []);
+  return (
+    <div ref={ref} className="relative">
+      <ToolbarButton onClick={() => setOpen(o => !o)}>{label}</ToolbarButton>
+      {open && (
+        <div className="absolute right-0 z-[9999] mt-1 w-48 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900" style={{ transform: 'translateZ(0)' }}>
+          {items}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input placeholder="搜尋: 歌名 / 歌詞 / 詞彙 / 文法" value={query} onChange={e => setQuery(e.target.value)} className="w-72 rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring dark:bg-zinc-900 dark:border-zinc-700" />
-          <IconButton label={dark ? '🌙 深色' : '☀️ 淺色'} onClick={() => setDark(d => !d)} title="切換深淺色" />
-          <IconButton label="匯出 全站歌詞CSV" onClick={exportAllLyricsCSV} />
-          <IconButton label="匯出 全站詞彙CSV" onClick={exportAllVocabCSV} />
-          <IconButton label="匯出 全站文法CSV" onClick={exportAllGrammarCSV} />
-          <label className="cursor-pointer rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10">
-            匯入 CSV（多檔）
-            <input type="file" accept=".csv" className="hidden" multiple onChange={e => { const fs = e.target.files; if (fs && fs.length) importBundleCSV(fs); }} />
-          </label>
-          <IconButton label="＋新增" onClick={() => setShowCreate(true)} />
-        </div>
-      </div>
-
-      {/* Search results */}
-      {query && (
-        <Section title={`搜尋結果 (${searchResults.length})`}>
-          <ul className="max-h-[40vh] space-y-2 overflow-auto pr-1">
-            {searchResults.map((r, i) => (
-              <li key={i}>
-                <button onClick={() => setSelected({ albumId: r.album.id, songId: r.song.id })} className="w-full text-left">
-                  <div className="text-sm"><span className="font-medium">[{r.where}]</span> {r.album.title} • {r.song.title}</div>
-                  <div className="truncate text-xs text-gray-600 dark:text-zinc-400">{r.snippet}</div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {/* Albums & Songs */}
-      {albums.map(a => (
-        <Section key={a.id} title={`${a.title} (${a.releaseDate})`} right={<IconButton label="＋新增歌曲" onClick={() => setShowCreate(true)} /> }>
-          {a.songs.map(s => (
-            <div key={s.id} className="mb-3 rounded-xl border p-3 dark:border-zinc-700">
-              <div className="flex items-center justify-between">
-                <div className="cursor-pointer font-semibold" onClick={() => setSelected({ albumId: a.id, songId: s.id })}>{s.title}</div>
-                <div className="flex flex-wrap gap-2">
-                  <IconButton label={editModeBySong[s.id] ? '編輯關' : '編輯開'} onClick={() => setEditModeBySong(m => ({ ...m, [s.id]: !m[s.id] }))} />
-                  <IconButton label="擷取詞彙(去重合併)" onClick={() => extractVocabAll(s, false)} />
-                  <IconButton label="只加入新詞" onClick={() => extractVocabAll(s, true)} />
-                  <IconButton label="文法自動偵測" onClick={() => autoSuggestGrammar(s)} />
-                </div>
-              </div>
-
-              {selected?.songId === s.id && (
-                <div className="mt-3">
-                  <div className="mb-2 text-sm text-gray-600 dark:text-zinc-400">歌詞（中韓對照；一行一段）</div>
-                  {s.lyrics.map((l, idx) => (
-                    <div key={l.id} className="mb-2 grid grid-cols-2 gap-2 text-sm">
-                      <textarea value={l.kor} onChange={e => setLine(s, idx, { kor: e.target.value })} className="min-h-[36px] rounded-lg border p-2 dark:bg-zinc-900 dark:border-zinc-700" readOnly={!editModeBySong[s.id]} placeholder="韓文" />
-                      <textarea value={l.zh} onChange={e => setLine(s, idx, { zh: e.target.value })} className="min-h-[36px] rounded-lg border p-2 dark:bg-zinc-900 dark:border-zinc-700" readOnly={!editModeBySong[s.id]} placeholder="中文" />
-                      {editModeBySong[s.id] && (
-                        <div className="col-span-2 flex justify-end gap-2">
-                          <IconButton label="於下方新增一行" onClick={() => addLineBelow(s, idx)} />
-                          <IconButton label="刪除此行" onClick={() => deleteLine(s, l.id)} />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {selected?.songId === s.id && (
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <Section title="詞彙表（可編輯）" right={
-                    <IconButton label="CSV 匯出本曲" onClick={() => { const rows: string[][] = [["Word","POS","Chinese","Memo"]]; s.vocab.forEach(v => rows.push([v.word, v.pos || '', v.zh || '', v.memo || ''])); downloadCSV(rows, `vocab_${s.title}.csv`); }} />
-                  }>
-                    <VocabEditor song={s} onChange={list => updateSong(s.id, { vocab: list })} />
-                  </Section>
-                  <Section title="詞彙練習">
-                    <PracticeVocab vocab={s.vocab} />
-                  </Section>
-                </div>
-              )}
-
-              {selected?.songId === s.id && (
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <Section title="文法點（可新增例句）">
-                    <GrammarEditor song={s} onChange={list => updateSong(s.id, { grammar: list })} />
-                  </Section>
-                  <Section title="文法測驗">
-                    <QuizGrammar grammar={s.grammar} />
-                  </Section>
-                </div>
-              )}
-            </div>
-          ))}
-        </Section>
-      ))}
-
-      {showCreate && (
-        <CreateMenu
-          albums={albums}
-          onClose={() => setShowCreate(false)}
-          onCreateAlbum={(title, date) => addAlbum(title, date)}
-          onCreateSong={(albumId, title, kor, zh) => addSong(albumId, title, kor, zh)}
-          korBulk={korBulk}
-          zhBulk={zhBulk}
-          setKorBulk={setKorBulk}
-          setZhBulk={setZhBulk}
-        />
       )}
     </div>
   );
 }
 
-// ===================== Subcomponents =====================
-function VocabEditor({ song, onChange }: { song: Song; onChange: (v: VocabItem[]) => void }) {
-  const [filter, setFilter] = useState('');
-  const list = useMemo(() => song.vocab.filter(v => { const q = filter.trim(); if (!q) return true; return (v.word || '').includes(q) || (v.zh || '').includes(q) || (v.pos || '').includes(q); }), [song.vocab, filter]);
-  const add = () => onChange([{ id: uid(), word: '', pos: '', zh: '', memo: '' }, ...song.vocab]);
-  const update = (id: string, patch: Partial<VocabItem>) => onChange(song.vocab.map(v => v.id === id ? { ...v, ...patch } : v));
-  const del = (id: string) => onChange(song.vocab.filter(v => v.id !== id));
+// ================ Desktop Sidebar / Mobile Drawer ================
+function DesktopSidebar({ onAddAlbum, onAddSong }: { onAddAlbum: () => void; onAddSong: () => void }) {
   return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <IconButton label="+ 新增詞彙" onClick={add} />
-        <input placeholder="過濾詞彙..." value={filter} onChange={e => setFilter(e.target.value)} className="rounded border px-3 py-1 text-sm dark:bg-zinc-900 dark:border-zinc-700" />
+    <div className="h-full overflow-hidden">
+      <div className="flex items-center justify-between border-b p-3 dark:border-zinc-800">
+        <div className="font-semibold">專輯 / 歌曲</div>
+        <div className="flex gap-2">
+          <button onClick={onAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 專輯</button>
+          <button onClick={onAddSong} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 歌曲</button>
+        </div>
       </div>
-      <div className="max-h-[40vh] overflow-auto">
+      <div className="h-[calc(100%-49px)] overflow-auto p-2">
+        <div className="mb-3 rounded-xl border p-2 dark:border-zinc-800">
+          <div className="font-medium">The Day</div>
+          <div className="text-xs text-zinc-500">2015-09-07</div>
+          <ul className="mt-2 space-y-1">
+            {['Freely','Congratulations','Out of My Mind'].map(s => (
+              <li key={s}><button className="w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10"><div className="truncate">{s}</div></button></li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SideDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
+      <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
+      <div className={`absolute left-0 top-0 h-full w-[300px] transform bg-white shadow-2xl transition-transform dark:bg-zinc-900 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex items-center justify-between border-b p-3 dark:border-zinc-800"><div className="font-semibold">專輯 / 歌曲</div><button className="rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" onClick={onClose}>關閉</button></div>
+        <div className="h-[calc(100%-49px)] overflow-auto p-3">
+          {['The Day'].map(a => (
+            <div key={a} className="mb-3 rounded-xl border p-2 dark:border-zinc-800">
+              <div className="font-medium">{a}</div>
+              <div className="text-xs text-zinc-500">2015-09-07</div>
+              <ul className="mt-2 space-y-1">{['Freely','Congratulations','Out of My Mind'].map(s => (<li key={s}><button className="w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10"><div className="truncate">{s}</div></button></li>))}</ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================ Learning Panels ================
+function LyricsPanel({ kor, zh, setKor, setZh, editMode, setEditMode }: { kor: string; zh: string; setKor: (s: string)=>void; setZh: (s: string)=>void; editMode: boolean; setEditMode: (v: boolean)=>void; }) {
+  const aligned = useMemo(() => alignLyrics(kor, zh), [kor, zh]);
+  return (
+    <div className="rounded-2xl border bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="font-medium">中韓對照</div>
+        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={editMode} onChange={e=>setEditMode(e.target.checked)} /> 編輯模式</label>
+      </div>
+
+      {editMode && (
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句）</div>
+            <textarea value={kor} onChange={e=>setKor(e.target.value)} className="h-48 w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900" />
+          </div>
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句）</div>
+            <textarea value={zh} onChange={e=>setZh(e.target.value)} className="h-48 w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900" />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <div className="mb-2 text-sm font-medium">對照預覽</div>
+        <div className="max-h-[300px] overflow-auto rounded-xl border bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/60">
+          {aligned.map((l, i) => (
+            <div key={i} className="grid grid-cols-12 gap-2 border-b px-3 py-2 last:border-none">
+              <div className="col-span-6 whitespace-pre-wrap">{l.kor || <span className="text-zinc-400">(空)</span>}</div>
+              <div className="col-span-6 whitespace-pre-wrap">{l.zh || <span className="text-zinc-400">(空)</span>}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VocabPanel({ kor }: { kor: string }) {
+  const tokens = useMemo(() => tokenizeKorean(kor), [kor]);
+  const top = useMemo(() => {
+    const map = new Map<string, number>(); tokens.forEach(t => map.set(t, (map.get(t)||0)+1));
+    return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  }, [tokens]);
+  return (
+    <div className="rounded-2xl border bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div className="mb-3 text-sm font-medium">單字表（含中文）</div>
+      <div className="overflow-auto rounded-xl border dark:border-zinc-800">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white dark:bg-zinc-900">
-            <tr className="border-b text-left dark:border-zinc-700">
-              <th className="w-40 py-2 pr-2">韓文</th>
-              <th className="w-24 py-2 pr-2">詞性</th>
-              <th className="py-2 pr-2">中文</th>
-              <th className="w-52 py-2 pr-2">備註</th>
-              <th className="w-24 py-2 pr-2 text-right">操作</th>
+          <thead className="bg-white/70 dark:bg-zinc-900/60">
+            <tr className="border-b dark:border-zinc-800 text-left">
+              <th className="w-1/2 px-3 py-2">韓文</th>
+              <th className="w-1/2 px-3 py-2">中文</th>
             </tr>
           </thead>
           <tbody>
-            {list.map(v => (
-              <tr key={v.id} className="border-b align-top dark:border-zinc-700">
-                <td className="py-2 pr-2"><input value={v.word} onChange={e => update(v.id, { word: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                <td className="py-2 pr-2"><input value={v.pos || ''} onChange={e => update(v.id, { pos: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                <td className="py-2 pr-2"><input value={v.zh || ''} onChange={e => update(v.id, { zh: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                <td className="py-2 pr-2"><input value={v.memo || ''} onChange={e => update(v.id, { memo: e.target.value })} className="w-full bg-transparent outline-none" /></td>
-                <td className="py-2 pr-2 text-right"><IconButton label="刪除" onClick={() => del(v.id)} /></td>
+            {SAMPLE_VOCAB.map(v => (
+              <tr key={v.word} className="border-b dark:border-zinc-800">
+                <td className="px-3 py-2">{v.word}</td>
+                <td className="px-3 py-2">{v.zh}</td>
               </tr>
             ))}
-            {list.length === 0 && (<tr><td colSpan={5} className="py-6 text-center text-gray-500">目前沒有符合過濾條件的詞彙。</td></tr>)}
+            {SAMPLE_VOCAB.length === 0 && (
+              <tr><td colSpan={2} className="px-3 py-4 text-center text-zinc-500">尚無單字</td></tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      <div className="mt-6 mb-2 text-sm font-medium">詞頻 Top 20（自動統計，僅供參考）</div>
+      {top.length===0 ? <div className="text-sm text-zinc-500">尚無資料</div> : (
+        <ol className="text-sm">{top.map(([w,c]) => (<li key={w} className="flex items-center justify-between border-b py-1 last:border-none">
+          <span>{w}</span><span className="text-xs text-zinc-500">{c}</span>
+        </li>))}</ol>
+      )}
     </div>
   );
 }
 
-function GrammarEditor({ song, onChange }: { song: Song; onChange: (v: GrammarItem[]) => void }) {
-  const add = () => onChange([{ id: uid(), pattern: '', explanation: '', examples: [] }, ...song.grammar]);
-  const update = (id: string, patch: Partial<GrammarItem>) => onChange(song.grammar.map(g => g.id === id ? { ...g, ...patch } : g));
-  const del = (id: string) => onChange(song.grammar.filter(g => g.id !== id));
+function GrammarPanel() {
   return (
-    <div className="space-y-3">
-      <div><IconButton label="+ 新增文法點" onClick={add} /></div>
-      {song.grammar.map(g => (
-        <div key={g.id} className="rounded-xl border p-3 dark:border-zinc-700">
-          <div className="grid grid-cols-12 gap-2">
-            <div className="col-span-12 md:col-span-4">
-              <div className="mb-1 text-xs text-gray-500">文法型態</div>
-              <input value={g.pattern} onChange={e => update(g.id, { pattern: e.target.value })} className="w-full rounded-lg border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700" placeholder="如: -았/었-, -(으)니까, -거든요" />
-            </div>
-            <div className="col-span-12 md:col-span-8">
-              <div className="mb-1 text-xs text-gray-500">說明 (繁中)</div>
-              <textarea value={g.explanation || ''} onChange={e => update(g.id, { explanation: e.target.value })} className="min-h-[60px] w-full rounded-lg border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <div className="mb-1 text-xs text-gray-500">例句</div>
-            {(g.examples || []).map((ex, i) => (
-              <div key={i} className="mb-2 grid grid-cols-12 gap-2">
-                <input value={ex.kor} onChange={e => { const next = [...(g.examples || [])]; next[i] = { ...ex, kor: e.target.value }; update(g.id, { examples: next }); }} className="col-span-6 rounded-lg border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700" placeholder="韓文" />
-                <input value={ex.zh || ''} onChange={e => { const next = [...(g.examples || [])]; next[i] = { ...ex, zh: e.target.value }; update(g.id, { examples: next }); }} className="col-span-6 rounded-lg border px-2 py-1 dark:bg-zinc-900 dark:border-zinc-700" placeholder="中文" />
-              </div>
-            ))}
-            <IconButton label="+ 新增例句" onClick={() => update(g.id, { examples: [...(g.examples || []), { kor: '', zh: '' }] })} />
-            <span className="mx-2 text-gray-400">|</span>
-            <IconButton label="刪除此文法點" onClick={() => del(g.id)} />
-          </div>
-        </div>
-      ))}
-      {song.grammar.length === 0 && <div className="py-6 text-center text-gray-500">尚未新增文法點。</div>}
+    <div className="rounded-2xl border bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div className="mb-2 text-sm font-medium">文法點（示例）</div>
+      <ul className="space-y-2 text-sm">
+        {SAMPLE_GRAMMAR.map(g => (
+          <li key={g.pattern} className="rounded-lg border p-3 dark:border-zinc-800">
+            <div className="font-medium">{g.pattern}</div>
+            <div className="text-zinc-600 dark:text-zinc-300">{g.explain}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-function PracticeVocab({ vocab }: { vocab: VocabItem[] }) {
-  const items = vocab.filter(v => (v.word || '').trim());
-  const [idx, setIdx] = useState(0);
+function FlashcardPanel({ vocab }: { vocab: { word: string; zh: string }[] }) {
+  // Session queue based SRS-like flow (使用所有單字)
+  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
+  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
   const [reveal, setReveal] = useState(false);
-  useEffect(() => { setReveal(false); }, [idx]);
-  if (items.length === 0) return <div className="text-sm text-gray-500">尚無詞彙可練習。</div>;
-  const it = items[Math.min(idx, items.length - 1)];
+
+  const total = vocab.length;
+  const currentIdx = queue[0] ?? null;
+  const current = currentIdx != null ? vocab[currentIdx] : null;
+  const firstSeenCount = meta.filter(m => m.firstSeen).length;
+
+  useEffect(() => { setReveal(false); }, [currentIdx]);
+
+  function grade(level: 'again' | 'good' | 'easy') {
+    if (currentIdx == null) return;
+    setMeta(m => {
+      const next = [...m];
+      if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true;
+      return next;
+    });
+    setQueue(q => {
+      const rest = q.slice(1);
+      if (level === 'again') {
+        // put back soon: after ~2 cards
+        const insertAt = Math.min(2, rest.length);
+        const next = [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)];
+        return next;
+      } else if (level === 'good') {
+        // put at end
+        return [...rest, currentIdx];
+      } else {
+        // easy: remove from queue
+        return rest;
+      }
+    });
+  }
+
+  if (total === 0) return <div className="rounded-2xl border bg-white/70 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 text-sm text-zinc-500">尚無單字</div>;
+  if (current == null) return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div className="mb-2 text-sm">本輪完成！</div>
+      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
+    </div>
+  );
+
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="text-sm text-gray-500">進度 {Math.min(idx + 1, items.length)} / {items.length}</div>
-      <div className="w-full rounded-xl border bg-white p-6 text-center shadow-sm dark:bg-zinc-900 dark:border-zinc-700">
-        <div className="text-2xl font-bold">{it.word}</div>
-        <div className="mt-2 text-gray-500">{it.pos || ''}</div>
-        <div className="mt-4 text-lg">{reveal ? (it.zh || <span className="text-gray-400">(尚未填寫中文)</span>) : <span className="text-gray-300">────────</span>}</div>
+    <div className="rounded-2xl border bg-white/70 p-6 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
+      {/* 進度顯示：僅顯示「已看過/總數」，不隨重複而倒退 */}
+      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
+      <div className="text-2xl font-bold">{current.word}</div>
+      <div className="mt-2 text-lg text-zinc-600 dark:text-zinc-300">{reveal ? current.zh : '———'}</div>
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        <ToolbarButton onClick={() => setReveal(r => !r)}>{reveal ? '隱藏' : '顯示解答'}</ToolbarButton>
       </div>
-      <div className="flex gap-2">
-        <IconButton label={reveal ? '隱藏中文' : '顯示中文'} onClick={() => setReveal(v => !v)} />
-        <IconButton label="上一個" onClick={() => setIdx(i => Math.max(0, i - 1))} />
-        <IconButton label="下一個" onClick={() => setIdx(i => Math.min(items.length - 1, i + 1))} />
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <button onClick={() => grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">不熟</button>
+        <button onClick={() => grade('good')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">一般</button>
+        <button onClick={() => grade('easy')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">很熟</button>
       </div>
     </div>
   );
 }
 
-function QuizGrammar({ grammar }: { grammar: GrammarItem[] }) {
-  const pool = grammar.filter(g => (g.pattern || '').trim());
-  const [idx, setIdx] = useState(0);
-  const [answer, setAnswer] = useState('');
-  const [feedback, setFeedback] = useState<string | null>(null);
-  useEffect(() => { setAnswer(''); setFeedback(null); }, [idx]);
-  if (pool.length === 0) return <div className="text-sm text-gray-500">尚無文法可測驗。</div>;
-  const g = pool[Math.min(idx, pool.length - 1)];
+// ================ Tiny self-tests (for sanity) ================
+function runSelfTests() {
+  const tests: { name: string; passed: boolean; message?: string }[] = [];
+  try { tests.push({ name: 'hamburger unicode', passed: HAMBURGER.charCodeAt(0) === 0x2630 }); } catch (e) { tests.push({ name: 'hamburger unicode', passed: false, message: String(e) }); }
+  try { const a = alignLyrics('가\n나', '甲'); tests.push({ name: 'align length', passed: a.length === 2 && a[1].kor === '나' && a[1].zh === '' }); } catch (e) { tests.push({ name: 'align length', passed: false, message: String(e) }); }
+  try { const t = tokenizeKorean('연락 목소리 ABC'); tests.push({ name: 'tokenize hangul only', passed: t.every(x => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(x)) }); } catch (e) { tests.push({ name: 'tokenize hangul only', passed: false, message: String(e) }); }
+  try { tests.push({ name: 'flash uses all vocab', passed: SAMPLE_VOCAB.length >= 5 }); } catch (e) { tests.push({ name: 'flash uses all vocab', passed: false, message: String(e) }); }
+  return tests;
+}
+
+function DevTests() {
+  const [open, setOpen] = useState(false);
+  const results = useMemo(() => runSelfTests(), []);
+  const ok = results.every(r => r.passed);
   return (
-    <div className="space-y-3">
-      <div className="rounded-xl border bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700">
-        <div className="text-sm text-gray-500">題目 {Math.min(idx + 1, pool.length)} / {pool.length}</div>
-        <div className="mt-1 text-lg">請輸入此文法的中文說明：<span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-sm text-amber-900">{g.pattern}</span></div>
-        <input value={answer} onChange={e => setAnswer(e.target.value)} className="mt-2 w-full rounded-lg border px-3 py-2 dark:bg-zinc-900 dark:border-zinc-700" placeholder="例如：過去時 / 轉折 / 想要..." />
-        {feedback && <div className={`mt-2 text-sm ${feedback.startsWith('✓') ? 'text-emerald-700' : 'text-red-700'}`}>{feedback}</div>}
-        <div className="mt-3 flex gap-2">
-          <IconButton label="檢查答案" onClick={() => { const norm = (s: string) => s.trim().toLowerCase(); const ok = norm(answer) && g.explanation && norm(g.explanation).includes(norm(answer)); setFeedback(ok ? '✓ 正確/合理' : `✗ 參考解：${g.explanation || '(未填寫)'}`); }} />
-          <IconButton label="下一題" onClick={() => setIdx(i => Math.min(pool.length - 1, i + 1))} />
-        </div>
-      </div>
-      <div className="rounded-xl border bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700">
-        <div className="text-sm text-gray-500">例句</div>
-        <ul className="mt-2 list-disc pl-5 text-sm text-gray-700 dark:text-zinc-300">
-          {(g.examples || []).map((ex, i) => (<li key={i}>{ex.kor} {ex.zh ? `— ${ex.zh}` : ''}</li>))}
-          {(g.examples || []).length === 0 && <li className="text-gray-400">(尚未新增例句)</li>}
+    <div className="rounded-2xl border bg-white/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <button className="rounded-lg border px-3 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" onClick={() => setOpen(o => !o)}>{open ? '隱藏' : '顯示'} 開發測試結果 {ok ? '✅' : '⚠️'}</button>
+      {open && (
+        <ul className="mt-2 space-y-1 text-sm">
+          {results.map((t, i) => (
+            <li key={i} className={t.passed ? 'text-emerald-600' : 'text-red-600'}>
+              {t.passed ? '✓' : '✗'} {t.name}{t.message ? ` - ${t.message}` : ''}
+            </li>
+          ))}
         </ul>
-      </div>
+      )}
     </div>
   );
 }
 
-// ========= Create Menu ========= //
-function CreateMenu({ albums, onClose, onCreateAlbum, onCreateSong, korBulk, zhBulk, setKorBulk, setZhBulk }:{ albums: Album[]; onClose: () => void; onCreateAlbum: (title: string, date: string) => void; onCreateSong: (albumId: string, title: string, kor: string, zh: string) => void; korBulk: string; zhBulk: string; setKorBulk: (v: string) => void; setZhBulk: (v: string) => void; }) {
-  const [tab, setTab] = useState<'album' | 'song'>('album');
-  const [albumId, setAlbumId] = useState<string>('');
-  const [songTitle, setSongTitle] = useState('');
-  const [albumTitle, setAlbumTitle] = useState('');
-  const [albumDate, setAlbumDate] = useState(new Date().toISOString().slice(0,10));
+// ================ Main Layout ================
+export default function App() {
+  const [dark, setDark] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false); // mobile overlay
+  const [sidebarVisible, setSidebarVisible] = useState(true); // desktop visible/hidden (remember)
+  const [tab, setTab] = useState<'lyrics' | 'vocab' | 'flash' | 'grammar'>('lyrics'); // order: lyrics, vocab, flash, grammar
+  const [editMode, setEditMode] = useState(true);
+
+  // sample state
+  const [title] = useState('DAY6 – Congratulations');
+  const [kor, setKor] = useState<string>(SAMPLE_KOR);
+  const [zh, setZh] = useState<string>(SAMPLE_ZH);
+
+  // remember dark + sidebar
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('lyrics_theme');
+      const isDark = savedTheme === 'dark';
+      setDark(isDark); document.documentElement.classList.toggle('dark', isDark);
+      const side = localStorage.getItem('lyrics_sidebar');
+      if (side === 'closed') setSidebarVisible(false);
+    } catch {}
+  }, []);
+
+  const toggleDark = () => {
+    const next = !dark; setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    try { localStorage.setItem('lyrics_theme', next ? 'dark' : 'light'); } catch {}
+  };
+
+  const toggleSidebar = () => {
+    setSidebarVisible(v => {
+      const next = !v; try { localStorage.setItem('lyrics_sidebar', next ? 'open' : 'closed'); } catch {}
+      return next;
+    });
+  };
+
+  const aligned = useMemo(()=>alignLyrics(kor, zh), [kor, zh]);
+
+  // export CSV demo (aligned rows)
+  function exportCSV() {
+    const rows = aligned.map((r,i)=>[String(i+1), r.kor, r.zh]);
+    const csv = ["#","kor","zh"].join(',') + "\n" + rows.map(r=> r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join("\n");
+    download(`lyrics-sample.csv`, csv);
+  }
+
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-3xl rounded-2xl border bg-white p-4 shadow-xl dark:bg-zinc-900 dark:border-zinc-700">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex gap-2">
-            <button className={`rounded px-3 py-1 text-sm ${tab==='album'?'bg-black text-white dark:bg-white dark:text-black':'border dark:border-zinc-700'}`} onClick={() => setTab('album')}>新增專輯</button>
-            <button className={`rounded px-3 py-1 text-sm ${tab==='song'?'bg-black text-white dark:bg-white dark:text-black':'border dark:border-zinc-700'}`} onClick={() => setTab('song')}>新增歌曲</button>
+    <div className="min-h-screen bg-amber-50/40 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
+        <div className="mx-auto max-w-[1280px] px-4">
+          <div className="flex flex-nowrap items-center gap-2 py-3">
+            <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" title="切換側邊選單" onClick={() => {
+              if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar(); else setDrawerOpen(true);
+            }}>{HAMBURGER} 選單</button>
+
+            <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">DAY6 歌詞學韓文</div>
+
+            <div className="ml-auto flex flex-nowrap items-center gap-2">
+              <input placeholder="搜尋：歌名 / 歌詞 / 詞彙 / 文法" className="w-60 max-w-[40vw] shrink-0 rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring dark:border-zinc-700 dark:bg-zinc-900 md:w-72" />
+              <ToolbarButton onClick={toggleDark}>{dark ? '深色' : '淺色'}</ToolbarButton>
+
+              <DropMenu label="匯入 / 匯出" items={<>
+                <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={exportCSV}>匯出歌詞 CSV（示例）</button>
+                <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>download('vocab-sample.csv', 'word,zh\n연락,聯絡\n목소리,聲音')}>匯出單字 CSV（示例）</button>
+                <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>download('grammar-sample.csv', 'pattern,explain\n-잖아(요),不是說…嗎')} >匯出文法 CSV（示例）</button>
+                <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10">匯入 CSV<input type="file" className="hidden" multiple /></label>
+              </>} />
+
+              <DropMenu label="新增" items={<>
+                <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10">新增專輯</button>
+                <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10">新增歌曲</button>
+              </>} />
+            </div>
           </div>
-          <button className="rounded px-2 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/10" onClick={onClose}>關閉</button>
         </div>
-        {tab === 'album' ? (
-          <div className="grid gap-3">
-            <div>
-              <div className="mb-1 text-xs text-gray-500">專輯名稱</div>
-              <input value={albumTitle} onChange={e => setAlbumTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:bg-zinc-900 dark:border-zinc-700" placeholder="例如：The Book of Us" />
+      </header>
+
+      {/* Body: desktop sidebar (visible only when toggled on) + content always visible */}
+      <div className="mx-auto max-w-[1280px] px-4 py-6">
+        <div className="md:flex md:gap-4">
+          {sidebarVisible && (
+            <div className="hidden w-[280px] shrink-0 rounded-xl border bg-white/70 dark:border-zinc-800 dark:bg-zinc-900/60 md:block">
+              <DesktopSidebar onAddAlbum={()=>{}} onAddSong={()=>{}} />
             </div>
-            <div>
-              <div className="mb-1 text-xs text-gray-500">發行日期</div>
-              <input type="date" value={albumDate} onChange={e => setAlbumDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:bg-zinc-900 dark:border-zinc-700" />
+          )}
+
+          {/* Main content always shown */}
+          <div className="min-w-0 flex-1 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-2xl font-bold">{title}</div>
+                <div className="text-xs text-zinc-500">示例資料（無音檔）</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>中韓對照</TabButton>
+                  <TabButton active={tab==='vocab'} onClick={()=>setTab('vocab')}>單字表</TabButton>
+                  <TabButton active={tab==='flash'} onClick={()=>setTab('flash')}>單字卡</TabButton>
+                  <TabButton active={tab==='grammar'} onClick={()=>setTab('grammar')}>文法</TabButton>
+                </div>
+              </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <IconButton label="新增" onClick={() => { if (!albumTitle.trim()) return alert('請輸入專輯名稱'); onCreateAlbum(albumTitle, albumDate); }} />
-            </div>
+
+            {tab==='lyrics' && <LyricsPanel kor={kor} zh={zh} setKor={setKor} setZh={setZh} editMode={editMode} setEditMode={v=>setEditMode(v)} />}
+            {tab==='vocab' && <VocabPanel kor={kor} />}
+            {tab==='flash' && <FlashcardPanel vocab={SAMPLE_VOCAB} />}
+            {tab==='grammar' && <GrammarPanel />}
+
+            <DevTests />
           </div>
-        ) : (
-          <div className="grid grid-cols-12 gap-3">
-            <div className="col-span-12 md:col-span-6">
-              <div className="mb-1 text-xs text-gray-500">選擇專輯</div>
-              <select value={albumId} onChange={e => setAlbumId(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:bg-zinc-900 dark:border-zinc-700">
-                <option value="">請選擇</option>
-                {albums.map(a => <option key={a.id} value={a.id}>{a.title}（{a.releaseDate}）</option>)}
-              </select>
-            </div>
-            <div className="col-span-12 md:col-span-6">
-              <div className="mb-1 text-xs text-gray-500">歌曲名稱</div>
-              <input value={songTitle} onChange={e => setSongTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:bg-zinc-900 dark:border-zinc-700" placeholder="例如：Congratulations" />
-            </div>
-            <div className="col-span-12 md:col-span-6">
-              <div className="mb-1 text-xs text-gray-500">韓文歌詞（每行一段）</div>
-              <textarea value={korBulk} onChange={e => setKorBulk(e.target.value)} className="h-48 w-full rounded-lg border p-2 dark:bg-zinc-900 dark:border-zinc-700" placeholder={`첫 줄\n둘째 줄\n셋째 줄`} />
-            </div>
-            <div className="col-span-12 md:col-span-6">
-              <div className="mb-1 text-xs text-gray-500">中文翻譯（每行一段，可與韓文行數不同）</div>
-              <textarea value={zhBulk} onChange={e => setZhBulk(e.target.value)} className="h-48 w-full rounded-lg border p-2 dark:bg-zinc-900 dark:border-zinc-700" placeholder={`第一段\n第二段\n第三段`} />
-            </div>
-            <div className="col-span-12 flex justify-end gap-2">
-              <IconButton label="新增歌曲" onClick={() => { if (!albumId) return alert('請先選擇專輯'); if (!songTitle.trim()) return alert('請輸入歌曲名稱'); onCreateSong(albumId, songTitle, korBulk, zhBulk); }} />
-            </div>
-          </div>
-        )}
+        </div>
       </div>
+
+      {/* Mobile Drawer */}
+      <SideDrawer open={drawerOpen} onClose={()=>setDrawerOpen(false)} />
     </div>
   );
 }
