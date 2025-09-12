@@ -10,7 +10,6 @@ type AppData = { artist: string; albums: Album[]; updatedAt: string; version: st
 
 /* ===================== Helpers ===================== */
 const HAMBURGER = "\u2630"; // ☰
-const DOTS = "⋮⋮";
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -46,7 +45,7 @@ function fileToDataURL(file: File): Promise<string> {
 /* ===================== Seed ===================== */
 const SEED: AppData = {
   artist: "DAY6",
-  version: "2.5.0",
+  version: "2.6.0",
   updatedAt: new Date().toISOString(),
   albums: [
     {
@@ -140,7 +139,7 @@ function DesktopSidebar({
 }) {
   return (
     <aside className="w-[317px] shrink-0 overflow-y-auto border-r p-3 hidden md:block">
-      {/* 讓內部內容固定 284px，包含標題列與卡片，排序按鈕也會一起內縮 */}
+      {/* 內層固定 284px，包含標題列與卡片，排序按鈕也跟著內縮 */}
       <div className="w-[284px]">
         {/* Top bar */}
         <div className="mb-3 flex items-center justify-between">
@@ -148,7 +147,7 @@ function DesktopSidebar({
           <button
             onClick={()=>{ if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
             className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${sortMode ? 'bg-black/5' : ''}`}
-            title="切換排序模式（可拖曳）"
+            title="切換排序模式（上下移動）"
           >
             {sortMode ? '完成' : '排序'}
           </button>
@@ -158,14 +157,13 @@ function DesktopSidebar({
         <div className="space-y-3">
           {data.albums.map((a, albumIdx) => {
             const editing = editingAlbumId === a.id;
+            const atTop = albumIdx === 0;
+            const atBottom = albumIdx === data.albums.length - 1;
+
             return (
               <div
                 key={a.id}
-                className={`w-[284px] overflow-hidden rounded-xl border bg-white/70 p-2 ${sortMode ? 'cursor-grab' : ''}`}
-                draggable={sortMode}
-                onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','album'); e.dataTransfer.setData('from', String(albumIdx)); e.dataTransfer.effectAllowed = 'move'; }}
-                onDragOver={(e)=>{ if (!sortMode) return; e.preventDefault(); e.dataTransfer.dropEffect='move'; }}
-                onDrop={(e)=>{ if (!sortMode) return; const t = e.dataTransfer.getData('type'); if (t==='album') { const from = Number(e.dataTransfer.getData('from')); onReorderAlbum(from, albumIdx); } }}
+                className="w-[284px] overflow-hidden rounded-xl border bg-white/70 p-2"
               >
                 {/* Header */}
                 {!editing ? (
@@ -179,13 +177,32 @@ function DesktopSidebar({
                         <div className="truncate text-xs text-zinc-500">{a.releaseDate}</div>
                       </div>
                     </div>
-                    {!sortMode && (
-                      <button
-                        onClick={()=>onToggleAlbumEdit(a.id)}
-                        className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
-                        title="編輯專輯"
-                      >✎</button>
-                    )}
+
+                    {/* 右側：排序模式 → 上下移；一般模式 → ✎ 編輯 */}
+                    <div className="flex items-center gap-1">
+                      {sortMode ? (
+                        <>
+                          <button
+                            className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                            onClick={()=>onReorderAlbum(albumIdx, albumIdx-1)}
+                            disabled={atTop}
+                            title="上移專輯"
+                          >▲</button>
+                          <button
+                            className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                            onClick={()=>onReorderAlbum(albumIdx, albumIdx+1)}
+                            disabled={atBottom}
+                            title="下移專輯"
+                          >▼</button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={()=>onToggleAlbumEdit(a.id)}
+                          className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
+                          title="編輯專輯"
+                        >✎</button>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="mb-2 space-y-2">
@@ -226,36 +243,49 @@ function DesktopSidebar({
 
                 {/* Song list */}
                 <ul className="space-y-1">
-                  {a.songs.map((s, songIdx) => (
-                    <li
-                      key={s.id}
-                      className={`${sortMode ? 'cursor-grab' : ''}`}
-                      draggable={sortMode}
-                      onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','song'); e.dataTransfer.setData('aid', a.id); e.dataTransfer.setData('from', String(songIdx)); e.dataTransfer.effectAllowed='move'; }}
-                      onDragOver={(e)=>{ if (!sortMode) return; const t = e.dataTransfer.getData('type'); const aid = e.dataTransfer.getData('aid'); if (t==='song' && aid===a.id) { e.preventDefault(); e.dataTransfer.dropEffect='move'; } }}
-                      onDrop={(e)=>{ if (!sortMode) return; const t = e.dataTransfer.getData('type'); const aid = e.dataTransfer.getData('aid'); if (t==='song' && aid===a.id) { const from = Number(e.dataTransfer.getData('from')); onReorderSong(a.id, from, songIdx); } }}
-                    >
-                      {/* grid 1fr + auto，按鈕不會把文字擠出外框 */}
-                      <div className="grid w-full grid-cols-[1fr,auto] items-center gap-2">
-                        <button
-                          onClick={()=>onSelect(a.id, s.id)}
-                          className={`min-w-0 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}
-                          title={sortMode ? '拖曳以排序' : '開啟歌曲'}
-                        >
-                          <div className="truncate">{sortMode ? `${DOTS} ` : ''}{s.title}</div>
-                        </button>
+                  {a.songs.map((s, songIdx) => {
+                    const sTop = songIdx === 0;
+                    const sBottom = songIdx === a.songs.length - 1;
 
-                        {/* 刪除鍵：只有在「該專輯的編輯模式」才顯示 */}
-                        {editing && !sortMode ? (
+                    return (
+                      <li key={s.id}>
+                        {/* grid: 1fr + auto（右側放「刪除」或「上下移」） */}
+                        <div className="grid w-full grid-cols-[1fr,auto] items-center gap-2">
                           <button
-                            onClick={(e)=>{ e.stopPropagation(); onDeleteSong(a.id, s.id); }}
-                            className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
-                            title="刪除此歌曲"
-                          >×</button>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
+                            onClick={()=>onSelect(a.id, s.id)}
+                            className={`min-w-0 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}
+                            title="開啟歌曲"
+                          >
+                            <div className="truncate">{s.title}</div>
+                          </button>
+
+                          {/* 右側操作：排序模式顯示上下移；否則若在專輯編輯模式顯示刪除 */}
+                          {sortMode ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                                onClick={()=>onReorderSong(a.id, songIdx, songIdx-1)}
+                                disabled={sTop}
+                                title="上移歌曲"
+                              >▲</button>
+                              <button
+                                className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                                onClick={()=>onReorderSong(a.id, songIdx, songIdx+1)}
+                                disabled={sBottom}
+                                title="下移歌曲"
+                              >▼</button>
+                            </div>
+                          ) : editing ? (
+                            <button
+                              onClick={(e)=>{ e.stopPropagation(); onDeleteSong(a.id, s.id); }}
+                              className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
+                              title="刪除此歌曲"
+                            >×</button>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
                   {a.songs.length===0 && <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>}
                 </ul>
               </div>
@@ -267,7 +297,7 @@ function DesktopSidebar({
   );
 }
 
-/* ===================== Mobile Drawer（RWD：小螢幕顯示） ===================== */
+/* ===================== Mobile Drawer（RWD） ===================== */
 function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong }: {
   open: boolean; onClose: () => void;
   data: AppData;
@@ -325,7 +355,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
   return (
     <div className="rounded-2xl border bg-white/70 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="font-medium">中韓對照</div>
+        <div className="font-medium">歌詞</div>
         <div className="flex items-center gap-2 text-sm">
           <span>編輯模式</span>
           <Toggle checked={editMode} onChange={setEditMode} />
@@ -401,7 +431,7 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
         </div>
       </div>
 
-      {/* 新增單字輸入列（RWD 下不會擠壞） */}
+      {/* 新增單字輸入列 */}
       <div className="mb-3 grid grid-cols-12 gap-2">
         <input value={newWord} onChange={e=>setNewWord(e.target.value)} placeholder="韓文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
         <input value={newZh} onChange={e=>setNewZh(e.target.value)} placeholder="中文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
@@ -575,20 +605,22 @@ export default function App() {
   const [sortMode, setSortMode] = useState(false);
   const [editingAlbumId, setEditingAlbumId] = useState<string|null>(null);
 
-  // DnD helpers
+  // reorder helpers
   function arrayMove<T>(arr: T[], from: number, to: number) {
     const next = [...arr];
+    if (to < 0 || to >= next.length) return next;
     const item = next.splice(from, 1)[0];
-    next.splice(to < 0 ? 0 : to, 0, item);
+    next.splice(to, 0, item);
     return next;
   }
   function reorderAlbum(fromIdx: number, toIdx: number) { if (fromIdx!==toIdx) setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) })); }
   function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
-    if (fromIdx===toIdx) return;
     setData(d => {
       const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
       const album = d.albums[ai];
-      const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: arrayMove(album.songs, fromIdx, toIdx) };
+      const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
+      if (nextSongs === album.songs) return d;
+      const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: nextSongs };
       return { ...d, albums: nextAlbums };
     });
   }
@@ -608,7 +640,7 @@ export default function App() {
 
   // selection & current
   const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(() => {
-    const a0 = data.albums[0]; const s0 = a0?.songs[0]; return a0 && s0 ? { albumId: a0.id, songId: s0.id } : null;
+    const a0 = SEED.albums[0]; const s0 = a0?.songs[0]; return a0 && s0 ? { albumId: a0.id, songId: s0.id } : null;
   });
   const current = useMemo(() => {
     if (!selected) return null as { album: Album; song: Song } | null;
@@ -621,7 +653,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [tab, setTab] = useState<'lyrics' | 'vocab' | 'flash' | 'grammar'>('lyrics');
-  const [editMode, setEditMode] = useState(true);
+  const [editMode, setEditMode] = useState(false); // 預設關閉
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -671,14 +703,14 @@ export default function App() {
     return out.slice(0, 100);
   }, [query, data]);
 
-  // header menus（「新增歌曲」永遠可見；若已有當前專輯則預選）
+  // header menus
   const ImportExportMenu = (
     <>
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportJSON}>匯出 JSON（全站）</button>
       {current && (
         <>
           <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={()=>exportLyricsCSV(current.song)}>匯出歌詞 CSV（此歌）</button>
-          <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={()=>exportVocabCSV(current.song)}>匯出單字 CSV（此歌）</button>
+          <button className="block w-full px-3 py-1 text-left hover:bg黑/5" onClick={()=>exportVocabCSV(current.song)}>匯出單字 CSV（此歌）</button>
           <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={()=>exportGrammarCSV(current.song)}>匯出文法 CSV（此歌）</button>
         </>
       )}
@@ -772,7 +804,7 @@ export default function App() {
                     <div className="text-xs text-zinc-500">{current.album.title} • {current.song.releaseDate || current.album.releaseDate}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>中韓對照</TabButton>
+                    <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>歌詞</TabButton>
                     <TabButton active={tab==='vocab'}  onClick={()=>setTab('vocab')}>單字表</TabButton>
                     <TabButton active={tab==='flash'}  onClick={()=>setTab('flash')}>單字卡</TabButton>
                     <TabButton active={tab==='grammar'} onClick={()=>setTab('grammar')}>文法</TabButton>
@@ -785,7 +817,7 @@ export default function App() {
                 {tab==='grammar' && <GrammarPanel  song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} />}
               </>
             ) : (
-              <div className="rounded-2xl border bg-white/70 p-6 text-zinc-500">請在左側選擇或新增一首歌曲</div>
+              <div className="rounded-2xl border bg白/70 p-6 text-zinc-500">請在左側選擇或新增一首歌曲</div>
             )}
           </div>
         </div>
