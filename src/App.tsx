@@ -19,7 +19,6 @@ function download(filename: string, text: string) {
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
 }
-
 function alignLyrics(korRaw: string, zhRaw: string) {
   const kor = (korRaw || "").split(/\r?\n/);
   const zh = (zhRaw || "").split(/\r?\n/);
@@ -28,7 +27,6 @@ function alignLyrics(korRaw: string, zhRaw: string) {
   for (let i = 0; i < max; i++) out.push({ kor: (kor[i] || "").trim(), zh: (zh[i] || "").trim() });
   return out;
 }
-
 const isHangul = (s: string) => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(s);
 function tokenizeKorean(text: string) {
   return (text || "")
@@ -37,15 +35,17 @@ function tokenizeKorean(text: string) {
     .filter(Boolean)
     .filter(isHangul);
 }
-
 function toCSV(rows: string[][]) {
   return rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g,'""') + '"').join(',')).join("\n");
+}
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
 }
 
 /* ===================== Seed ===================== */
 const SEED: AppData = {
   artist: "DAY6",
-  version: "2.2.0",
+  version: "2.3.0",
   updatedAt: new Date().toISOString(),
   albums: [
     {
@@ -106,115 +106,150 @@ function Modal({ open, onClose, children, title }: { open: boolean; onClose: () 
 
 /* ===================== Desktop Sidebar ===================== */
 function DesktopSidebar({
-  data, selected, onSelect, onToggleSort, sortMode,
+  data, selected, onSelect,
+  sortMode, onToggleSort,
+  editingAlbumId, onToggleAlbumEdit,
+  onUpdateAlbum, onUploadAlbumCover,
   onReorderAlbum, onReorderSong, onDeleteSong
 }: {
   data: AppData;
   selected: { albumId: string; songId: string } | null;
-  sortMode: boolean;
-  onToggleSort: () => void;
   onSelect: (albumId: string, songId: string) => void;
+  sortMode: boolean; onToggleSort: () => void;
+  editingAlbumId: string | null; onToggleAlbumEdit: (id: string | null)=>void;
+  onUpdateAlbum: (albumId: string, patch: Partial<Album>)=>void;
+  onUploadAlbumCover: (albumId: string, file: File)=>void;
   onReorderAlbum: (from: number, to: number) => void;
   onReorderSong: (albumId: string, from: number, to: number) => void;
   onDeleteSong: (albumId: string, songId: string) => void;
 }) {
   return (
     <aside className="w-80 shrink-0 overflow-y-auto border-r p-3 dark:border-zinc-800">
+      {/* Top bar */}
       <div className="mb-3 flex items-center justify-between">
         <div className="text-sm font-semibold">專輯 / 歌曲</div>
-        <div className="flex gap-2">
-          <button
-            onClick={onToggleSort}
-            className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10 ${sortMode ? 'bg-black/5 dark:bg-white/10' : ''}`}
-            title="切換排序模式（桌面可拖曳）"
-          >
-            {sortMode ? '完成' : '排序'}
-          </button>
-        </div>
+        <button
+          onClick={()=>{ if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
+          className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10 ${sortMode ? 'bg-black/5 dark:bg-white/10' : ''}`}
+          title="切換排序模式（桌面可拖曳）"
+        >
+          {sortMode ? '完成' : '排序'}
+        </button>
       </div>
 
+      {/* Album cards */}
       <div className="space-y-3">
-        {data.albums.map((a, albumIdx) => (
-          <div
-            key={a.id}
-            className={`rounded-xl border p-2 dark:border-zinc-800 ${sortMode ? 'cursor-grab' : ''}`}
-            draggable={sortMode}
-            onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','album'); e.dataTransfer.setData('from', String(albumIdx)); }}
-            onDragOver={(e)=>{ if (!sortMode) return; if (e.dataTransfer.getData('type')==='album') e.preventDefault(); }}
-            onDrop={(e)=>{ 
-              if (!sortMode) return;
-              const t = e.dataTransfer.getData('type'); 
-              if (t==='album') { const from = Number(e.dataTransfer.getData('from')); onReorderAlbum(from, albumIdx); }
-            }}
-          >
-            {/* 封面 + 標題（避免跑版：min-w-0 + truncate） */}
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/60">
-                  {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">無封面</div>}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{a.title}</div>
-                  <div className="truncate text-xs text-zinc-500">{a.releaseDate}</div>
-                </div>
-              </div>
-              {/* 右側留白，避免擠壓 */}
-              <div className="shrink-0 text-xs text-zinc-400">{sortMode ? DOTS : ''}</div>
-            </div>
-
-            <ul className="space-y-1">
-              {a.songs.map((s, songIdx) => (
-                <li
-                  key={s.id}
-                  className={`${sortMode ? 'cursor-grab' : ''}`}
-                  draggable={sortMode}
-                  onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','song'); e.dataTransfer.setData('aid', a.id); e.dataTransfer.setData('from', String(songIdx)); }}
-                  onDragOver={(e)=>{ 
-                    if (!sortMode) return;
-                    const t = e.dataTransfer.getData('type');
-                    const aid = e.dataTransfer.getData('aid');
-                    if (t==='song' && aid===a.id) e.preventDefault(); // 同專輯內排序
-                  }}
-                  onDrop={(e)=>{ 
-                    if (!sortMode) return;
-                    const t = e.dataTransfer.getData('type');
-                    const aid = e.dataTransfer.getData('aid');
-                    if (t==='song' && aid===a.id) {
-                      const from = Number(e.dataTransfer.getData('from'));
-                      onReorderSong(a.id, from, songIdx);
-                    }
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={()=>onSelect(a.id, s.id)}
-                      className={`min-w-0 flex-1 rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}
-                      title={sortMode ? '拖曳以排序' : '開啟歌曲'}
-                    >
-                      <div className="truncate">{sortMode ? `${DOTS} ` : ''}{s.title}</div>
-                    </button>
-                    <button
-                      onClick={(e)=>{ e.stopPropagation(); onDeleteSong(a.id, s.id); }}
-                      className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
-                      title="刪除此歌曲"
-                    >
-                      ×
-                    </button>
+        {data.albums.map((a, albumIdx) => {
+          const editing = editingAlbumId === a.id;
+          return (
+            <div
+              key={a.id}
+              className={`overflow-hidden rounded-xl border bg-white/70 p-2 dark:border-zinc-800 dark:bg-zinc-900/60 ${sortMode ? 'cursor-grab' : ''}`}
+              draggable={sortMode}
+              onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','album'); e.dataTransfer.setData('from', String(albumIdx)); }}
+              onDragOver={(e)=>{ if (!sortMode) return; if (e.dataTransfer.getData('type')==='album') e.preventDefault(); }}
+              onDrop={(e)=>{ if (!sortMode) return; if (e.dataTransfer.getData('type')==='album') { const from = Number(e.dataTransfer.getData('from')); onReorderAlbum(from, albumIdx); } }}
+            >
+              {/* Header */}
+              {!editing ? (
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/60">
+                      {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">無封面</div>}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{a.title}</div>
+                      <div className="truncate text-xs text-zinc-500">{a.releaseDate}</div>
+                    </div>
                   </div>
-                </li>
-              ))}
-              {a.songs.length===0 && (
-                <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>
+                  {!sortMode && (
+                    <button
+                      onClick={()=>onToggleAlbumEdit(a.id)}
+                      className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+                      title="編輯專輯"
+                    >✎</button>
+                  )}
+                </div>
+              ) : (
+                <div className="mb-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/60">
+                        {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">無封面</div>}
+                      </div>
+                      <div className="min-w-0">
+                        <input
+                          value={a.title}
+                          onChange={e=>onUpdateAlbum(a.id,{title:e.target.value})}
+                          className="w-full truncate rounded-md border px-2 py-1 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                        <input
+                          type="date"
+                          value={a.releaseDate}
+                          onChange={e=>onUpdateAlbum(a.id,{releaseDate:e.target.value})}
+                          className="mt-1 w-full truncate rounded-md border px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={()=>onToggleAlbumEdit(null)}
+                      className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+                      title="完成編輯"
+                    >完成</button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">
+                      上傳封面
+                      <input type="file" accept="image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if (f) onUploadAlbumCover(a.id, f); }} />
+                    </label>
+                    {a.cover && <button onClick={()=>onUpdateAlbum(a.id,{cover:""})} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">清除封面</button>}
+                  </div>
+                </div>
               )}
-            </ul>
-          </div>
-        ))}
+
+              {/* Song list */}
+              <ul className="space-y-1">
+                {a.songs.map((s, songIdx) => (
+                  <li
+                    key={s.id}
+                    className={`${sortMode ? 'cursor-grab' : ''}`}
+                    draggable={sortMode}
+                    onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','song'); e.dataTransfer.setData('aid', a.id); e.dataTransfer.setData('from', String(songIdx)); }}
+                    onDragOver={(e)=>{ if (!sortMode) return; const t = e.dataTransfer.getData('type'); const aid = e.dataTransfer.getData('aid'); if (t==='song' && aid===a.id) e.preventDefault(); }}
+                    onDrop={(e)=>{ if (!sortMode) return; const t = e.dataTransfer.getData('type'); const aid = e.dataTransfer.getData('aid'); if (t==='song' && aid===a.id) { const from = Number(e.dataTransfer.getData('from')); onReorderSong(a.id, from, songIdx); } }}
+                  >
+                    {/* 關鍵：用 grid [1fr,auto] + min-w-0，刪除鍵不會把文字擠出外框 */}
+                    <div className="grid w-full grid-cols-[1fr,auto] items-center gap-2">
+                      <button
+                        onClick={()=>onSelect(a.id, s.id)}
+                        className={`min-w-0 rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}
+                        title={sortMode ? '拖曳以排序' : '開啟歌曲'}
+                      >
+                        <div className="truncate">{sortMode ? `${DOTS} ` : ''}{s.title}</div>
+                      </button>
+
+                      {/* 刪除鍵：只有在「該專輯的編輯模式」才顯示 */}
+                      {editing && !sortMode ? (
+                        <button
+                          onClick={(e)=>{ e.stopPropagation(); onDeleteSong(a.id, s.id); }}
+                          className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+                          title="刪除此歌曲"
+                        >×</button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+                {a.songs.length===0 && <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </aside>
   );
 }
 
-/* ===================== Mobile Drawer（保留原功能，不做拖曳） ===================== */
+/* ===================== Mobile Drawer（不做拖曳/編輯） ===================== */
 function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong }: {
   open: boolean; onClose: () => void;
   data: AppData;
@@ -260,7 +295,7 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
   );
 }
 
-/* ===================== Panels（略，與你原本一致） ===================== */
+/* ===================== Panels（保持不變） ===================== */
 function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; onUpdate: (patch: Partial<Song>)=>void; editMode: boolean; setEditMode: (v:boolean)=>void; }) {
   const kor = useMemo(()=> song.lyrics.map(l=>l.kor).join("\n"), [song.lyrics]);
   const zh  = useMemo(()=> song.lyrics.map(l=>l.zh ).join("\n"), [song.lyrics]);
@@ -428,8 +463,9 @@ export default function App() {
   });
   useEffect(() => { try { localStorage.setItem('day6_lyrics_app_data_v2', JSON.stringify({ ...data, updatedAt: new Date().toISOString() })); } catch {} }, [data]);
 
-  // sort mode
+  // modes
   const [sortMode, setSortMode] = useState(false);
+  const [editingAlbumId, setEditingAlbumId] = useState<string|null>(null);
 
   // DnD helpers
   function arrayMove<T>(arr: T[], from: number, to: number) {
@@ -438,32 +474,32 @@ export default function App() {
     next.splice(to < 0 ? 0 : to, 0, item);
     return next;
   }
-  function reorderAlbum(fromIdx: number, toIdx: number) {
-    if (fromIdx === toIdx) return;
-    setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) }));
-  }
+  function reorderAlbum(fromIdx: number, toIdx: number) { if (fromIdx!==toIdx) setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) })); }
   function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
-    if (fromIdx === toIdx) return;
+    if (fromIdx===toIdx) return;
     setData(d => {
-      const ai = d.albums.findIndex(a => a.id === albumId);
-      if (ai < 0) return d;
+      const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
       const album = d.albums[ai];
-      const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
-      const nextAlbums = [...d.albums];
-      nextAlbums[ai] = { ...album, songs: nextSongs };
+      const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: arrayMove(album.songs, fromIdx, toIdx) };
       return { ...d, albums: nextAlbums };
     });
   }
   function deleteSong(albumId: string, songId: string) {
     setData(d => {
-      const ai = d.albums.findIndex(a => a.id === albumId);
-      if (ai < 0) return d;
+      const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
       const album = d.albums[ai];
-      const nextAlbums = [...d.albums];
-      nextAlbums[ai] = { ...album, songs: album.songs.filter(s => s.id !== songId) };
+      const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: album.songs.filter(s => s.id !== songId) };
       return { ...d, albums: nextAlbums };
     });
     if (selected?.albumId === albumId && selected?.songId === songId) setSelected(null);
+  }
+
+  // album update
+  function updateAlbum(albumId: string, patch: Partial<Album>) {
+    setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, ...patch } : a) }));
+  }
+  async function uploadAlbumCover(albumId: string, file: File) {
+    const dataUrl = await fileToDataURL(file); updateAlbum(albumId, { cover: dataUrl });
   }
 
   // selection & current
@@ -496,7 +532,7 @@ export default function App() {
     setSidebarVisible(v => { const next = !v; try { localStorage.setItem('lyrics_sidebar', next ? 'open' : 'closed'); } catch {} return next; });
   };
 
-  // CRUD helpers
+  // song CRUD
   function addAlbumImpl(title: string, releaseDate: string, cover?: string) {
     const album: Album = { id: uid(), title, releaseDate, cover: cover || "", songs: [] };
     setData(d => ({ ...d, albums: [...d.albums, album] }));
@@ -565,10 +601,8 @@ export default function App() {
     </>
   );
 
-  // Modal State
+  // modal
   const [modal, setModal] = useState<{ type: null | 'album' | 'song'; albumId?: string }>({ type: null });
-
-  // Modal Components
   const AddAlbumForm = (
     <AddAlbumModal
       open={modal.type==='album'}
@@ -595,12 +629,9 @@ export default function App() {
             <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" title="切換側邊選單" onClick={() => {
               if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar(); else setDrawerOpen(true);
             }}>{HAMBURGER} 選單</button>
-
             <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">DAY6 歌詞學韓文</div>
-
             <div className="relative ml-auto flex flex-nowrap items-center gap-2">
               <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-60 max-w-[40vw] shrink-0 rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring dark:border-zinc-700 dark:bg-zinc-900 md:w-72" />
-              {/* search dropdown */}
               {query && searchResults.length>0 && (
                 <div className="absolute right-32 top-full z-[2000] mt-1 max-h-[50vh] w-[480px] overflow-auto rounded-lg border bg-white p-2 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
                   {searchResults.map((r,i)=>(
@@ -627,9 +658,13 @@ export default function App() {
               <DesktopSidebar
                 data={data}
                 selected={selected}
+                onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
                 sortMode={sortMode}
                 onToggleSort={()=>setSortMode(m=>!m)}
-                onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
+                editingAlbumId={editingAlbumId}
+                onToggleAlbumEdit={(id)=>setEditingAlbumId(id)}
+                onUpdateAlbum={updateAlbum}
+                onUploadAlbumCover={uploadAlbumCover}
                 onReorderAlbum={reorderAlbum}
                 onReorderSong={reorderSong}
                 onDeleteSong={deleteSong}
@@ -637,7 +672,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Main content */}
+          {/* Main */}
           <div className="min-w-0 flex-1 space-y-4">
             {current ? (
               <>
@@ -676,7 +711,7 @@ export default function App() {
                 {tab==='grammar' && <GrammarPanel  song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} />}
               </>
             ) : (
-              <div className="rounded-2xl border bg-white/70 p-6 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/60">請在左側新增或選擇一首歌曲</div>
+              <div className="rounded-2xl border bg-white/70 p-6 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/60">請在左側選擇或新增一首歌曲</div>
             )}
           </div>
         </div>
@@ -693,8 +728,9 @@ export default function App() {
         onOpenAddSong={(aid)=>setModal({ type: 'song', albumId: aid })}
       />
 
-      {AddAlbumForm}
-      {AddSongForm}
+      {/* Modals */}
+      <AddAlbumModal open={modal.type==='album'} onClose={()=>setModal({ type: null })} onSubmit={(p)=>{ addAlbumImpl(p.title, p.releaseDate, p.cover); setModal({ type: null }); }} />
+      <AddSongModal  open={modal.type==='song'}  onClose={()=>setModal({ type: null })} albums={data.albums} defaultAlbumId={modal.albumId} onSubmit={(p)=>{ addSongImpl(p); setModal({ type: null }); }} />
     </div>
   );
 }
@@ -709,9 +745,7 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
 
   function onPickFile(file?: File) {
     if (!file) { setCover(undefined); return; }
-    const reader = new FileReader();
-    reader.onload = () => setCover(String(reader.result || ""));
-    reader.readAsDataURL(file);
+    fileToDataURL(file).then(setCover);
   }
 
   return (
@@ -725,13 +759,13 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
           <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900" placeholder="例如：The Book of Us"/>
         </div>
         <div>
-          <div className="mb-1 text-xs text-zinc-500">發行日</div>
+          <div className="mb-1 text-xs text-zinc-500">發佈日期</div>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"/>
         </div>
         <div>
           <div className="mb-1 text-xs text-zinc-500">封面圖片（可選）</div>
           <div className="flex items-center gap-3">
-            <label className="rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10 cursor-pointer">
+            <label className="cursor-pointer rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">
               選擇圖片
               <input type="file" accept="image/*" className="hidden" onChange={e=>onPickFile(e.target.files?.[0])}/>
             </label>
@@ -767,7 +801,7 @@ function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { ope
             </select>
           </div>
           <div className="col-span-12 md:col-span-6">
-            <div className="mb-1 text-xs text-zinc-500">發行日（可空）</div>
+            <div className="mb-1 text-xs text-zinc-500">發佈日（可空）</div>
             <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"/>
           </div>
         </div>
