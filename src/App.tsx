@@ -514,7 +514,6 @@ export default function App() {
   }, [data, selected]);
 
   // UI state
-  const [dark, setDark] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [tab, setTab] = useState<'lyrics' | 'vocab' | 'flash' | 'grammar'>('lyrics');
@@ -522,12 +521,9 @@ export default function App() {
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    try { const savedTheme = localStorage.getItem('lyrics_theme'); const isDark = savedTheme === 'dark'; setDark(isDark); document.documentElement.classList.toggle('dark', isDark); } catch {}
-    try { const side = localStorage.getItem('lyrics_sidebar'); if (side === 'closed') setSidebarVisible(false); } catch {}
-  }, []);
-  const toggleDark = () => {
-    const next = !dark; setDark(next); document.documentElement.classList.toggle('dark', next); try { localStorage.setItem('lyrics_theme', next ? 'dark' : 'light'); } catch {}
-  };
+  try { const side = localStorage.getItem('lyrics_sidebar'); if (side === 'closed') setSidebarVisible(false); } catch {}
+}, []);
+
   const toggleSidebar = () => {
     setSidebarVisible(v => { const next = !v; try { localStorage.setItem('lyrics_sidebar', next ? 'open' : 'closed'); } catch {} return next; });
   };
@@ -595,20 +591,31 @@ export default function App() {
     </>
   );
   const NewMenu = (
-    <>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>setModal({ type: 'album' })}>新增專輯</button>
-      {current && <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>setModal({ type: 'song', albumId: current.album.id })}>新增歌曲（此專輯）</button>}
-    </>
-  );
+  <>
+    <button
+      className="block w-full px-3 py-1 text-left hover:bg-black/5"
+      onClick={()=>setModal({ type: 'album' })}
+    >
+      新增專輯
+    </button>
+    <button
+      className="block w-full px-3 py-1 text-left hover:bg-black/5"
+      onClick={()=>setModal({ type: 'song', albumId: current?.album.id })}
+    >
+      新增歌曲
+    </button>
+  </>
+);
+
 
   // modal
   const [modal, setModal] = useState<{ type: null | 'album' | 'song'; albumId?: string }>({ type: null });
 
 
   return (
-    <div className="min-h-screen bg-amber-50/40 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="min-h-screen bg-amber-50/40 text-gray-900">
       {/* Top Bar */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
+      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1280px] px-4">
           <div className="flex flex-nowrap items-center gap-2 py-3">
             <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" title="切換側邊選單" onClick={() => {
@@ -627,7 +634,6 @@ export default function App() {
                   ))}
                 </div>
               )}
-              <ToolbarButton onClick={toggleDark}>{dark ? '深色' : '淺色'}</ToolbarButton>
               <DropMenu label="匯入 / 匯出" items={ImportExportMenu} />
               <DropMenu label="新增" items={NewMenu} />
             </div>
@@ -639,7 +645,7 @@ export default function App() {
       <div className="mx-auto max-w-[1280px] px-4 py-6">
         <div className="md:flex md:gap-4">
           {sidebarVisible && (
-            <div className="hidden w-[280px] shrink-0 rounded-xl border bg-white/70 dark:border-zinc-800 dark:bg-zinc-900/60 md:block">
+              <div className="hidden w-[320px] shrink-0 rounded-xl border bg-white/70 md:block">
               <DesktopSidebar
                 data={data}
                 selected={selected}
