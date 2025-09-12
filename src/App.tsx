@@ -98,15 +98,6 @@ export default function LyricsApp() {
   const [editModeBySong, setEditModeBySong] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
 
-  // selection memo
-  const current = useMemo(() => {
-    if (!selected) return null as { album: Album; song: Song } | null;
-    const album = albums.find(a => a.id === selected.albumId);
-    if (!album) return null;
-    const song = album.songs.find(s => s.id === selected.songId);
-    if (!song) return null;
-    return { album, song };
-  }, [albums, selected]);
 
   // ===== Create =====
   const addAlbum = (title: string, date: string) => {
@@ -234,7 +225,7 @@ export default function LyricsApp() {
       A.forEach(r => { const [id,title,date] = r; if (!id) return; albumMap.set(id, { id, title, releaseDate: date || '', songs: [] }); });
       const songMap = new Map<string, Song>();
       S.forEach(r => { const [id,albumId,title,date] = r; if (!id) return; const song: Song = { id, title, releaseDate: date || '', lyrics: [], vocab: [], grammar: [] }; songMap.set(id, song); const a = albumMap.get(albumId); if (a) a.songs.push(song); });
-      L.forEach(r => { const [songId, idx, kor, zh] = r; const s = songMap.get(songId); if (s) s.lyrics.push({ id: uid(), kor: kor || '', zh: zh || '' }); });
+      L.forEach(r => { const [songId, , kor, zh] = r; const s = songMap.get(songId); if (s) s.lyrics.push({ id: uid(), kor: kor || '', zh: zh || '' }); });
       V.forEach(r => { const [songId, word, pos, zh, memo] = r; const s = songMap.get(songId); if (s && word) s.vocab.push({ id: uid(), word, pos, zh, memo }); });
       G.forEach(r => { const [songId, pattern, explanation, ek, ez] = r; const s = songMap.get(songId); if (s && pattern) { const ex = (ek || ez) ? [{ kor: ek || '', zh: ez || '' }] : []; s.grammar.push({ id: uid(), pattern, explanation, examples: ex }); } });
       const list = Array.from(albumMap.values());
