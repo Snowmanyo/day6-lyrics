@@ -27,6 +27,13 @@ function alignLyrics(korRaw: string, zhRaw: string) {
   for (let i = 0; i < max; i++) out.push({ kor: (kor[i] || "").trim(), zh: (zh[i] || "").trim() });
   return out;
 }
+// 放在 alignLyrics 之後
+function trimLyricsTail(rows: { kor: string; zh: string }[]) {
+  let last = rows.length - 1;
+  while (last >= 0 && rows[last].kor.trim() === "" && rows[last].zh.trim() === "") last--;
+  return rows.slice(0, last + 1);
+}
+
 const isHangul = (s: string) => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(s);
 function tokenizeKorean(text: string) {
   return (text || "")
@@ -394,35 +401,82 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
 }
 
 /* ===================== Panels ===================== */
-function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; onUpdate: (patch: Partial<Song>)=>void; editMode: boolean; setEditMode: (v:boolean)=>void; }) {
-  const kor = useMemo(()=> song.lyrics.map(l=>l.kor).join("\n"), [song.lyrics]);
-  const zh  = useMemo(()=> song.lyrics.map(l=>l.zh ).join("\n"), [song.lyrics]);
-  const aligned = useMemo(()=> alignLyrics(kor, zh), [kor, zh]);
-  function writeFromText(korRaw: string, zhRaw: string) {
-    const rows = alignLyrics(korRaw, zhRaw).map(r => ({ id: uid(), kor: r.kor, zh: r.zh }));
-    onUpdate({ lyrics: rows });
+function LyricsPanel({
+  song, onUpdate, editMode, setEditMode
+}: {
+  song: Song; onUpdate: (patch: Partial<Song>)=>void; editMode: boolean; setEditMode: (v:boolean)=>void;
+}) {
+  // 原始文字（來自狀態）
+  const korFromState = useMemo(()=> song.lyrics.map(l=>l.kor).join("\n"), [song.lyrics]);
+  const zhFromState  = useMemo(()=> song.lyrics.map(l=>l.zh ).join("\n"), [song.lyrics]);
+
+  // 編輯用草稿（受控）
+  const [korDraft, setKorDraft] = useState(korFromState);
+  const [zhDraft , setZhDraft ] = useState(zhFromState);
+
+  // 切換編輯時，同步草稿
+  useEffect(()=>{
+    if (editMode) { setKorDraft(korFromState); setZhDraft(zhFromState); }
+  }, [editMode, korFromState, zhFromState]);
+
+  // 依目前顯示來源產生預覽（編輯時用草稿，否則用實際值）
+  const previewKor = editMode ? korDraft : korFromState;
+  const previewZh  = editMode ? zhDraft  : zhFromState;
+  const aligned = useMemo(()=> alignLyrics(previewKor, previewZh), [previewKor, previewZh]);
+
+  function save() {
+    // 對齊 → 去尾端全空白行 → 存回 state
+    const rows = trimLyricsTail(alignLyrics(korDraft, zhDraft));
+    const normalized = rows.map(r => ({ id: uid(), kor: r.kor, zh: r.zh }));
+    onUpdate({ lyrics: normalized });
+    setEditMode(false);
   }
+  function cancel() {
+    setKorDraft(korFromState);
+    setZhDraft(zhFromState);
+    setEditMode(false);
+  }
+
   return (
     <div className="rounded-2xl border bg-white/70 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">歌詞</div>
         <div className="flex items-center gap-2 text-sm">
-          <span>編輯模式</span>
-          <Toggle checked={editMode} onChange={setEditMode} />
+          {!editMode ? (
+            <>
+              <span>編輯模式</span>
+              <Toggle checked={editMode} onChange={setEditMode} />
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <ToolbarButton onClick={save}>儲存</ToolbarButton>
+              <ToolbarButton onClick={cancel}>取消</ToolbarButton>
+            </div>
+          )}
         </div>
       </div>
+
       {editMode && (
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句）</div>
-            <textarea defaultValue={kor} onChange={e=>writeFromText(e.target.value, zh)} className="h-48 w-full rounded-lg border px-3 py-2" />
+            <textarea
+              value={korDraft}
+              onChange={e=>setKorDraft(e.target.value)}
+              className="h-48 w-full rounded-lg border px-3 py-2"
+            />
           </div>
           <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句）</div>
-            <textarea defaultValue={zh} onChange={e=>writeFromText(kor, e.target.value)} className="h-48 w-full rounded-lg border px-3 py-2" />
+            <textarea
+              value={zhDraft}
+              onChange={e=>setZhDraft(e.target.value)}
+              className="h-48 w-full rounded-lg border px-3 py-2"
+            />
           </div>
         </div>
       )}
+
       <div className="mt-4">
         <div className="mb-2 text-sm font-medium">對照預覽</div>
         <div className="max-h-[300px] overflow-auto rounded-xl border bg-white/60">
@@ -437,6 +491,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
     </div>
   );
 }
+
 
 function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
   const [edit, setEdit] = useState(false);
@@ -784,8 +839,21 @@ export default function App() {
         const isAlbums = header.join(",") === "albumid,title,releaseDate".toLowerCase() || header.includes("albumid") && header.includes("title") && header.includes("releasedate");
         const isSongs  = header.includes("albumid") && header.includes("title") && header.includes("songid");
         const isLyrics = header.includes("songid") && header.includes("line") && header.includes("kor") && header.includes("zh");
-        const isVocab  = header.includes("songid") && header.includes("word");
         const isGrammar= header.includes("songid") && header.includes("pattern");
+        // 將表頭做「去空白、小寫」正規化
+        const H = header.map(h => h.replace(/\s+/g, '').toLowerCase());
+        const idxOf = (keys: string[]) => { for (const k of keys) { const i = H.indexOf(k); if (i >= 0) return i; } return -1; };
+
+        // 支援多語表頭
+        const idxSongId     = idxOf(["songid"]);
+        const idxAlbumTitle = idxOf(["album","albumtitle","專輯","專輯名稱"]);
+        const idxSongTitle  = idxOf(["song","songtitle","title","歌曲","歌名"]);
+        const idxWord       = idxOf(["word","korean","kr","han","韓文","單字"]);
+        const idxZhCol      = idxOf(["zh","chinese","cn","中文","翻譯","釋義"]);
+
+        // 單字表判斷：有 word 欄位，且 (有 songId 或 有 專輯+歌曲)
+        const isVocab  = (idxWord >= 0) && (idxSongId >= 0 || (idxAlbumTitle >= 0 && idxSongTitle >= 0));
+
 
         if (isAlbums) {
           // albums: albumId?, title, releaseDate, cover?
@@ -879,51 +947,54 @@ export default function App() {
           return;
         }
         if (isVocab) {
-          // vocab: songId, word, zh
-          const idx = { songId: header.indexOf("songid"), word: header.indexOf("word"), zh: header.indexOf("zh") };
+        const payload = rows.slice(1).filter(r => r.length > 0);
+
+        setData(d => {
           const grouped: Record<string, { word: string; zh: string }[]> = {};
-          for (const r of rows.slice(1)) {
-            const sid = (r[idx.songId]||"").trim(); if (!sid) continue;
-            (grouped[sid] ||= []).push({ word: (r[idx.word]||"").trim(), zh: (idx.zh>=0 ? (r[idx.zh]||"").trim() : "") });
+          let matched = 0, skipped = 0;
+
+          for (const r of payload) {
+            // 解析欄位
+            const sidRaw = idxSongId >= 0 ? (r[idxSongId] || "").trim() : "";
+            const albumName = idxAlbumTitle >= 0 ? (r[idxAlbumTitle] || "").trim() : "";
+            const songName  = idxSongTitle  >= 0 ? (r[idxSongTitle ] || "").trim() : "";
+            const word = (r[idxWord] || "").trim();
+            const zh   = idxZhCol >= 0 ? (r[idxZhCol] || "").trim() : "";
+
+            if (!word) { skipped++; continue; }
+
+            // 解析目標 songId：優先用 songId，否則用「專輯名+歌名」匹配
+            let sid = sidRaw;
+            if (!sid) {
+              const album = d.albums.find(a => a.title.trim() === albumName);
+              const song  = album?.songs.find(s => s.title.trim() === songName);
+              sid = song?.id || "";
+            }
+
+            if (!sid) { skipped++; continue; }
+            (grouped[sid] ||= []).push({ word, zh });
+            matched++;
           }
-          setData(d => ({
+
+          const next = {
             ...d,
             albums: d.albums.map(a => ({
               ...a,
               songs: a.songs.map(s => grouped[s.id]
-                ? { ...s, vocab: grouped[s.id].map(x => ({ id: uid(), word: x.word, zh: x.zh })) }
+                ? { ...s, vocab: grouped[s.id].map(x => ({ id: uid(), word: x.word, zh: x.zh })) } // 覆寫該歌單字表
                 : s
               )
             }))
-          }));
-          alert("已匯入單字");
-          return;
-        }
-        if (isGrammar) {
-          // grammar: songId, pattern, explain, example
-          const idx = { songId: header.indexOf("songid"), pattern: header.indexOf("pattern"), explain: header.indexOf("explain"), example: header.indexOf("example") };
-          const grouped: Record<string, { pattern: string; explain: string; example: string }[]> = {};
-          for (const r of rows.slice(1)) {
-            const sid = (r[idx.songId]||"").trim(); if (!sid) continue;
-            (grouped[sid] ||= []).push({
-              pattern: (r[idx.pattern]||"").trim(),
-              explain: (idx.explain>=0 ? (r[idx.explain]||"").trim() : ""),
-              example: (idx.example>=0 ? (r[idx.example]||"").trim() : ""),
-            });
-          }
-          setData(d => ({
-            ...d,
-            albums: d.albums.map(a => ({
-              ...a,
-              songs: a.songs.map(s => grouped[s.id]
-                ? { ...s, grammar: grouped[s.id].map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example })) }
-                : s
-              )
-            }))
-          }));
-          alert("已匯入文法");
-          return;
-        }
+          };
+
+          // 提示結果（可移除）
+          alert(`已匯入單字：${matched} 筆；找不到歌曲：${skipped} 行`);
+          return next;
+        });
+
+        return;
+      }
+
 
         alert("無法辨識的 CSV 表頭，請先下載範本查看欄位。");
       } catch (e) {
