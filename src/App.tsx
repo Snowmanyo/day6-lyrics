@@ -2,19 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // ===================== Types =====================
 type LyricLine = { id: string; kor: string; zh: string };
-
 type VocabItem = { id: string; word: string; zh?: string };
-
 type GrammarPoint = { id: string; pattern: string; explain?: string };
-
 type Song = { id: string; title: string; releaseDate?: string; lyrics: LyricLine[]; vocab: VocabItem[]; grammar: GrammarPoint[] };
-
 type Album = { id: string; title: string; releaseDate: string; songs: Song[] };
-
 type AppData = { artist: string; albums: Album[]; updatedAt: string; version: string };
 
 // ===================== ASCII-safe constants & helpers =====================
-const HAMBURGER = "\u2630"; // ☰ (use unicode escape to avoid encoding issues)
+const HAMBURGER = "\u2630"; // ☰
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
@@ -114,7 +109,7 @@ function Modal({ open, onClose, children, title }: { open: boolean; onClose: () 
   );
 }
 
-// ===================== Sidebar (desktop) & Drawer (mobile) =====================
+// ===================== Sidebar (desktop) =====================
 function DesktopSidebar({
   data, selected, onSelect, onOpenAddAlbum,
   onOpenEditSongs, onReorderAlbum, onReorderSong
@@ -188,7 +183,7 @@ function DesktopSidebar({
                   onDragOver={(e)=>{ 
                     const t = e.dataTransfer.getData('type');
                     const aid = e.dataTransfer.getData('aid');
-                    if (t==='song' && aid===a.id) e.preventDefault(); // 僅同專輯內排序
+                    if (t==='song' && aid===a.id) e.preventDefault(); // 同專輯內排序
                   }}
                   onDrop={(e)=>{ 
                     const t = e.dataTransfer.getData('type');
@@ -216,8 +211,7 @@ function DesktopSidebar({
   );
 }
 
-
-
+// ===================== Drawer (mobile) — 不做拖曳，保留原功能，避免 TS 錯誤 =====================
 function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong }: {
   open: boolean; onClose: () => void;
   data: AppData;
@@ -229,25 +223,29 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <div className={`absolute left-0 top-0 h-full w-[300px] transform bg-white shadow-2xl transition-transform dark:bg-zinc-900 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex items-center justify-between gap-2 border-b p-3 dark:border-zinc-800"><div className="font-semibold">專輯 / 歌曲</div><div className="flex gap-2"><button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 專輯</button><button className="rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" onClick={onClose}>關閉</button></div></div>
+        <div className="flex items-center justify-between gap-2 border-b p-3 dark:border-zinc-800">
+          <div className="font-semibold">專輯 / 歌曲</div>
+          <div className="flex gap-2">
+            <button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">+ 專輯</button>
+            <button className="rounded-lg border px-2 py-1 text-sm hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10" onClick={onClose}>關閉</button>
+          </div>
+        </div>
         <div className="h-[calc(100%-49px)] space-y-3 overflow-auto p-3">
           {data.albums.sort((a,b)=>a.releaseDate.localeCompare(b.releaseDate)).map(a => (
-      <div
-        key={a.id}
-        className="rounded-xl border p-2 dark:border-zinc-800"
-        draggable
-        onDragStart={(e)=>{ e.dataTransfer.setData('type','album'); e.dataTransfer.setData('from', String(albumIdx)); }}
-        onDragOver={(e)=>{ if (e.dataTransfer.getData('type')==='album') e.preventDefault(); }}
-        onDrop={(e)=>{ 
-          const t = e.dataTransfer.getData('type'); 
-          if (t==='album') {
-            const from = Number(e.dataTransfer.getData('from'));
-            onReorderAlbum(from, albumIdx);
-          }
-        }}
-      >
-              <div className="mb-1 flex items-center justify-between"><div><div className="font-medium">{a.title}</div><div className="text-xs text-zinc-500">{a.releaseDate}</div></div><button onClick={()=>onOpenAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 歌曲</button></div>
-              <ul className="space-y-1">{a.songs.map(s => (<li key={s.id}><button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}><div className="truncate">{s.title}</div></button></li>))}</ul>
+            <div key={a.id} className="rounded-xl border p-2 dark:border-zinc-800">
+              <div className="mb-1 flex items-center justify-between">
+                <div><div className="font-medium">{a.title}</div><div className="text-xs text-zinc-500">{a.releaseDate}</div></div>
+                <button onClick={()=>onOpenAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">+ 歌曲</button>
+              </div>
+              <ul className="space-y-1">
+                {a.songs.map(s => (
+                  <li key={s.id}>
+                    <button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg黑/5 dark:hover:bg白/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}>
+                      <div className="truncate">{s.title}</div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
         </div>
@@ -326,7 +324,7 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
               <tr key={v.id} className="border-b dark:border-zinc-800">
                 <td className="px-3 py-2"><input value={v.word} onChange={e=>up(v.id,{word:e.target.value})} className="w-full bg-transparent outline-none"/></td>
                 <td className="px-3 py-2"><input value={v.zh||""} onChange={e=>up(v.id,{zh:e.target.value})} className="w-full bg-transparent outline-none"/></td>
-                <td className="px-3 py-2 text-right"><button onClick={()=>del(v.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">刪除</button></td>
+                <td className="px-3 py-2 text-right"><button onClick={()=>del(v.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">刪除</button></td>
               </tr>
             ))}
             {list.length===0 && (<tr><td colSpan={3} className="px-3 py-6 text-center text-zinc-500">沒有符合條件的單字</td></tr>)}
@@ -352,7 +350,7 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
               <input value={g.pattern} onChange={e=>up(g.id,{pattern:e.target.value})} placeholder="如：-았/었-、-(으)니까" className="col-span-12 md:col-span-4 rounded-lg border px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"/>
               <textarea value={g.explain||""} onChange={e=>up(g.id,{explain:e.target.value})} placeholder="說明" className="col-span-12 md:col-span-8 min-h-[60px] rounded-lg border px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"/>
             </div>
-            <div className="mt-2 text-right"><button onClick={()=>del(g.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">刪除</button></div>
+            <div className="mt-2 text-right"><button onClick={()=>del(g.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">刪除</button></div>
           </div>
         ))}
         {song.grammar.length===0 && <div className="py-6 text-center text-sm text-zinc-500">尚未新增文法點</div>}
@@ -393,7 +391,6 @@ function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Part
     <div className="rounded-2xl border bg-white/70 p-6 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
       <div className="mb-2 text-sm">尚無單字</div>
       <ToolbarButton onClick={()=>{
-        // 從歌詞自動擷取（去重），供示範
         const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
         onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
       }}>從歌詞自動擷取</ToolbarButton>
@@ -414,9 +411,9 @@ function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Part
       <div className="mt-2 text-lg text-zinc-600 dark:text-zinc-300">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
       <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
       <div className="mt-3 flex flex-wrap justify-center gap-2">
-        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">不熟</button>
-        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">一般</button>
-        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">很熟</button>
+        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">不熟</button>
+        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">一般</button>
+        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10">很熟</button>
       </div>
     </div>
   );
@@ -430,45 +427,39 @@ export default function App() {
     return SEED;
   });
   useEffect(() => { try { localStorage.setItem('day6_lyrics_app_data_v2', JSON.stringify({ ...data, updatedAt: new Date().toISOString() })); } catch {} }, [data]);
+
   // ===== Drag & Drop helpers =====
-function arrayMove<T>(arr: T[], from: number, to: number) {
-  const next = [...arr];
-  const item = next.splice(from, 1)[0];
-  next.splice(to < 0 ? 0 : to, 0, item);
-  return next;
-}
-
-function reorderAlbum(fromIdx: number, toIdx: number) {
-  setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) }));
-}
-
-function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
-  setData(d => {
-    const ai = d.albums.findIndex(a => a.id === albumId);
-    if (ai < 0) return d;
-    const album = d.albums[ai];
-    const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
-    const nextAlbums = [...d.albums];
-    nextAlbums[ai] = { ...album, songs: nextSongs };
-    return { ...d, albums: nextAlbums };
-  });
-}
-
-function deleteSong(albumId: string, songId: string) {
-  setData(d => {
-    const ai = d.albums.findIndex(a => a.id === albumId);
-    if (ai < 0) return d;
-    const album = d.albums[ai];
-    const nextAlbums = [...d.albums];
-    nextAlbums[ai] = { ...album, songs: album.songs.filter(s => s.id !== songId) };
-    return { ...d, albums: nextAlbums };
-  });
-
-  if (selected?.albumId === albumId && selected?.songId === songId) {
-    setSelected(null);
+  function arrayMove<T>(arr: T[], from: number, to: number) {
+    const next = [...arr];
+    const item = next.splice(from, 1)[0];
+    next.splice(to < 0 ? 0 : to, 0, item);
+    return next;
   }
-}
-
+  function reorderAlbum(fromIdx: number, toIdx: number) {
+    setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) }));
+  }
+  function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
+    setData(d => {
+      const ai = d.albums.findIndex(a => a.id === albumId);
+      if (ai < 0) return d;
+      const album = d.albums[ai];
+      const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
+      const nextAlbums = [...d.albums];
+      nextAlbums[ai] = { ...album, songs: nextSongs };
+      return { ...d, albums: nextAlbums };
+    });
+  }
+  function deleteSong(albumId: string, songId: string) {
+    setData(d => {
+      const ai = d.albums.findIndex(a => a.id === albumId);
+      if (ai < 0) return d;
+      const album = d.albums[ai];
+      const nextAlbums = [...d.albums];
+      nextAlbums[ai] = { ...album, songs: album.songs.filter(s => s.id !== songId) };
+      return { ...d, albums: nextAlbums };
+    });
+    if (selected?.albumId === albumId && selected?.songId === songId) setSelected(null);
+  }
 
   // selection
   const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(() => {
@@ -489,9 +480,8 @@ function deleteSong(albumId: string, songId: string) {
   const [editMode, setEditMode] = useState(true);
   const [query, setQuery] = useState("");
 
-  // add modals
-const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(null);
-const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs'; albumId?: string }>({ type: null });
+  // modal state（包含 edit-songs）
+  const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs'; albumId?: string }>({ type: null });
 
   // remember dark + sidebar
   useEffect(() => {
@@ -532,7 +522,6 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
   function importJSON(file: File) {
     const reader = new FileReader(); reader.onload = () => { try { const parsed = JSON.parse(String(reader.result)); setData(parsed); } catch { alert('JSON 解析失敗'); } }; reader.readAsText(file);
   }
-
   function exportLyricsCSV(song: Song) {
     const rows = [["#","kor","zh"], ...song.lyrics.map((l,i)=>[String(i+1), l.kor, l.zh])]; download(`lyrics-${song.title}.csv`, toCSV(rows));
   }
@@ -561,22 +550,22 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
   // header menus (wired)
   const ImportExportMenu = (
     <>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={exportJSON}>匯出 JSON（全站）</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10" onClick={exportJSON}>匯出 JSON（全站）</button>
       {current && (
         <>
-          <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>exportLyricsCSV(current.song)}>匯出歌詞 CSV（此歌）</button>
-          <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>exportVocabCSV(current.song)}>匯出單字 CSV（此歌）</button>
-          <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>exportGrammarCSV(current.song)}>匯出文法 CSV（此歌）</button>
+          <button className="block w-full px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10" onClick={()=>exportLyricsCSV(current.song)}>匯出歌詞 CSV（此歌）</button>
+          <button className="block w-full px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10" onClick={()=>exportVocabCSV(current.song)}>匯出單字 CSV（此歌）</button>
+          <button className="block w-full px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10" onClick={()=>exportGrammarCSV(current.song)}>匯出文法 CSV（此歌）</button>
         </>
       )}
-      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5 dark:hover:bg白/10">匯入 JSON<input type="file" className="hidden" accept="application/json" onChange={e=>{ const f=e.target.files?.[0]; if (f) importJSON(f); }}/></label>
+      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10">匯入 JSON<input type="file" className="hidden" accept="application/json" onChange={e=>{ const f=e.target.files?.[0]; if (f) importJSON(f); }}/></label>
     </>
   );
 
   const NewMenu = (
     <>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>setModal({ type: 'album' })}>新增專輯</button>
-      {current && <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>setModal({ type: 'song', albumId: current.album.id })}>新增歌曲（此專輯）</button>}
+      <button className="block w-full px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10" onClick={()=>setModal({ type: 'album' })}>新增專輯</button>
+      {current && <button className="block w-full px-3 py-1 text-left hover:bg黑/5 dark:hover:bg白/10" onClick={()=>setModal({ type: 'song', albumId: current.album.id })}>新增歌曲（此專輯）</button>}
     </>
   );
 
@@ -605,7 +594,7 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
       <header className="sticky top-0 z-40 border-b bg白/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
         <div className="mx-auto max-w-[1280px] px-4">
           <div className="flex flex-nowrap items-center gap-2 py-3">
-            <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" title="切換側邊選單" onClick={() => {
+            <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10" title="切換側邊選單" onClick={() => {
               if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar(); else setDrawerOpen(true);
             }}>{HAMBURGER} 選單</button>
 
@@ -639,16 +628,14 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
           {sidebarVisible && (
             <div className="hidden w-[280px] shrink-0 rounded-xl border bg-white/70 dark:border-zinc-800 dark:bg-zinc-900/60 md:block">
               <DesktopSidebar
-              data={data}
-              selected={selected}
-              onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
-              onOpenAddAlbum={()=>setModal({ type: 'album' })}
-              onOpenEditSongs={(aid)=>setModal({ type: 'edit-songs', albumId: aid })}
-              onReorderAlbum={reorderAlbum}
-              onReorderSong={reorderSong}
+                data={data}
+                selected={selected}
+                onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
+                onOpenAddAlbum={()=>setModal({ type: 'album' })}
+                onOpenEditSongs={(aid)=>setModal({ type: 'edit-songs', albumId: aid })}
+                onReorderAlbum={reorderAlbum}
+                onReorderSong={reorderSong}
               />
-
-
             </div>
           )}
 
@@ -658,23 +645,23 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                <SongTitleEditable
-                  title={current.song.title}
-                  onSave={(nextTitle)=>{
-                    setData(d => {
-                      const ai = d.albums.findIndex(a => a.id === current.album.id);
-                      if (ai < 0) return d;
-                      const si = d.albums[ai].songs.findIndex(s => s.id === current.song.id);
-                      if (si < 0) return d;
-                      const nextAlbums = [...d.albums];
-                      const targetAlbum = nextAlbums[ai];
-                      const nextSongs = [...targetAlbum.songs];
-                      nextSongs[si] = { ...nextSongs[si], title: nextTitle };
-                      nextAlbums[ai] = { ...targetAlbum, songs: nextSongs };
-                      return { ...d, albums: nextAlbums };
-                    });
-                  }}
-                />
+                    <SongTitleEditable
+                      title={current.song.title}
+                      onSave={(nextTitle)=>{
+                        setData(d => {
+                          const ai = d.albums.findIndex(a => a.id === current.album.id);
+                          if (ai < 0) return d;
+                          const si = d.albums[ai].songs.findIndex(s => s.id === current.song.id);
+                          if (si < 0) return d;
+                          const nextAlbums = [...d.albums];
+                          const targetAlbum = nextAlbums[ai];
+                          const nextSongs = [...targetAlbum.songs];
+                          nextSongs[si] = { ...nextSongs[si], title: nextTitle };
+                          nextAlbums[ai] = { ...targetAlbum, songs: nextSongs };
+                          return { ...d, albums: nextAlbums };
+                        });
+                      }}
+                    />
                     <div className="text-xs text-zinc-500">{current.album.title} • {current.song.releaseDate || current.album.releaseDate}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -708,15 +695,51 @@ const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs
         onOpenAddSong={(aid)=>setModal({ type: 'song', albumId: aid })}
       />
 
+      {/* ====== Edit Songs Modal（放在 App 內，作用域正確） ====== */}
+      {modal.type === 'edit-songs' && (
+        <Modal
+          open={true}
+          onClose={()=>setModal({ type: null })}
+          title="編輯歌曲清單（刪除；排序請到側欄拖曳）"
+        >
+          {(() => {
+            const aid = modal.albumId!;
+            const album = data.albums.find(a => a.id === aid);
+            if (!album) return <div className="text-sm text-red-500">找不到專輯</div>;
+            return (
+              <div className="space-y-2">
+                {album.songs.map(s => (
+                  <div key={s.id} className="flex items-center justify-between rounded-lg border px-3 py-2 dark:border-zinc-700">
+                    <div className="truncate">{s.title}</div>
+                    <div className="flex gap-2">
+                      <button
+                        className="rounded-md border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10"
+                        onClick={()=>{ setSelected({ albumId: album.id, songId: s.id }); setModal({ type: null }); }}
+                      >前往</button>
+                      <button
+                        className="rounded-md border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10"
+                        onClick={()=>deleteSong(album.id, s.id)}
+                      >刪除</button>
+                    </div>
+                  </div>
+                ))}
+                {album.songs.length === 0 && <div className="text-sm text-zinc-500">此專輯目前沒有歌曲</div>}
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
+
       {AddAlbumForm}
       {AddSongForm}
     </div>
   );
 }
+
+// ====== Inline title editor ======
 function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: string)=>void }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(title);
-
   useEffect(()=>{ setVal(title); }, [title]);
 
   if (!editing) {
@@ -724,7 +747,7 @@ function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: strin
       <div className="text-2xl font-bold flex items-center gap-2">
         <span className="truncate">{title}</span>
         <button
-          className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+          className="rounded-md border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10"
           onClick={()=>setEditing(true)}
           title="編輯歌名"
         >
@@ -743,11 +766,11 @@ function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: strin
         autoFocus
       />
       <button
-        className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+        className="rounded-md border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10"
         onClick={()=>{ onSave(val.trim() || title); setEditing(false); }}
       >儲存</button>
       <button
-        className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+        className="rounded-md border px-2 py-1 text-xs hover:bg黑/5 dark:border-zinc-700 dark:hover:bg白/10"
         onClick={()=>{ setVal(title); setEditing(false); }}
       >取消</button>
     </div>
@@ -775,42 +798,6 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
     </Modal>
   );
 }
-
-{/* ===== Edit Songs (per album) ===== */}
-{modal.type === 'edit-songs' && (
-  <Modal
-    open={true}
-    onClose={()=>setModal({ type: null })}
-    title="編輯歌曲清單（刪除；排序請到側欄拖曳）"
-  >
-    {(() => {
-      const aid = modal.albumId!;
-      const album = data.albums.find(a => a.id === aid);
-      if (!album) return <div className="text-sm text-red-500">找不到專輯</div>;
-      return (
-        <div className="space-y-2">
-          {album.songs.map(s => (
-            <div key={s.id} className="flex items-center justify-between rounded-lg border px-3 py-2 dark:border-zinc-700">
-              <div className="truncate">{s.title}</div>
-              <div className="flex gap-2">
-                <button
-                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
-                  onClick={()=>{ setSelected({ albumId: album.id, songId: s.id }); setModal({ type: null }); }}
-                >前往</button>
-                <button
-                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
-                  onClick={()=>deleteSong(album.id, s.id)}
-                >刪除</button>
-              </div>
-            </div>
-          ))}
-          {album.songs.length === 0 && <div className="text-sm text-zinc-500">此專輯目前沒有歌曲</div>}
-        </div>
-      );
-    })()}
-  </Modal>
-)}
-
 
 function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { open: boolean; onClose: () => void; onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) => void; albums: Album[]; defaultAlbumId?: string }) {
   const [albumId, setAlbumId] = useState<string>(defaultAlbumId || albums[0]?.id || "");
