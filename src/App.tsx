@@ -46,7 +46,7 @@ function fileToDataURL(file: File): Promise<string> {
 /* ===================== Seed ===================== */
 const SEED: AppData = {
   artist: "DAY6",
-  version: "2.4.0",
+  version: "2.5.0",
   updatedAt: new Date().toISOString(),
   albums: [
     {
@@ -69,8 +69,8 @@ function TabButton({ active, children, onClick }: { active?: boolean; children: 
     <button onClick={onClick} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${active ? 'bg-black text-white' : 'border hover:bg-black/5'}`}>{children}</button>
   );
 }
-function ToolbarButton({ children, onClick, type = 'button' }: { children: React.ReactNode; onClick?: () => void; type?: 'button'|'submit'|'reset' }) {
-  return <button type={type} onClick={onClick} className="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 active:scale-[0.99]">{children}</button>;
+function ToolbarButton({ children, onClick, type = 'button', className = '' }: { children: React.ReactNode; onClick?: () => void; type?: 'button'|'submit'|'reset'; className?: string }) {
+  return <button type={type} onClick={onClick} className={`shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 active:scale-[0.99] ${className}`}>{children}</button>;
 }
 function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -139,9 +139,9 @@ function DesktopSidebar({
   onDeleteSong: (albumId: string, songId: string) => void;
 }) {
   return (
-    <aside className="w-[310px] shrink-0 overflow-y-auto border-r p-3">
-      {/* 讓內部內容固定 268px，包含標題列與卡片，排序按鈕也會一起內縮 */}
-      <div className="w-[268px]">
+    <aside className="w-[317px] shrink-0 overflow-y-auto border-r p-3 hidden md:block">
+      {/* 讓內部內容固定 284px，包含標題列與卡片，排序按鈕也會一起內縮 */}
+      <div className="w-[284px]">
         {/* Top bar */}
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-semibold">專輯 / 歌曲</div>
@@ -161,7 +161,7 @@ function DesktopSidebar({
             return (
               <div
                 key={a.id}
-                className={`w-[268px] overflow-hidden rounded-xl border bg-white/70 p-2 ${sortMode ? 'cursor-grab' : ''}`}
+                className={`w-[284px] overflow-hidden rounded-xl border bg-white/70 p-2 ${sortMode ? 'cursor-grab' : ''}`}
                 draggable={sortMode}
                 onDragStart={(e)=>{ if (!sortMode) return; e.dataTransfer.setData('type','album'); e.dataTransfer.setData('from', String(albumIdx)); e.dataTransfer.effectAllowed = 'move'; }}
                 onDragOver={(e)=>{ if (!sortMode) return; e.preventDefault(); e.dataTransfer.dropEffect='move'; }}
@@ -267,7 +267,7 @@ function DesktopSidebar({
   );
 }
 
-/* ===================== Mobile Drawer（不做拖曳/編輯） ===================== */
+/* ===================== Mobile Drawer（RWD：小螢幕顯示） ===================== */
 function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong }: {
   open: boolean; onClose: () => void;
   data: AppData;
@@ -278,7 +278,7 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
   return (
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
-      <div className={`absolute left-0 top-0 h-full w-[300px] transform bg-white shadow-2xl transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`absolute left-0 top-0 h-full w-[85vw] max-w-[320px] transform bg-white shadow-2xl transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between gap-2 border-b p-3">
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
@@ -324,7 +324,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
   }
   return (
     <div className="rounded-2xl border bg-white/70 p-4">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">中韓對照</div>
         <div className="flex items-center gap-2 text-sm">
           <span>編輯模式</span>
@@ -348,8 +348,8 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
         <div className="max-h-[300px] overflow-auto rounded-xl border bg-white/60">
           {aligned.map((l, i) => (
             <div key={i} className="grid grid-cols-12 gap-2 border-b px-3 py-2 last:border-none">
-              <div className="col-span-6 whitespace-pre-wrap">{l.kor || <span className="text-zinc-400">(空)</span>}</div>
-              <div className="col-span-6 whitespace-pre-wrap">{l.zh  || <span className="text-zinc-400">(空)</span>}</div>
+              <div className="col-span-12 md:col-span-6 whitespace-pre-wrap">{l.kor || <span className="text-zinc-400">(空)</span>}</div>
+              <div className="col-span-12 md:col-span-6 whitespace-pre-wrap">{l.zh  || <span className="text-zinc-400">(空)</span>}</div>
             </div>
           ))}
         </div>
@@ -358,29 +358,37 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
   );
 }
 
-/* 單字表：改成編輯/儲存（本地草稿） */
+/* 單字表：頂部輸入框 + 編輯/儲存（本地草稿），操作欄位不換行 */
 function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
   const [edit, setEdit] = useState(false);
   const [filter, setFilter] = useState("");
   const [draft, setDraft] = useState<VocabItem[]>(song.vocab);
+  const [newWord, setNewWord] = useState("");
+  const [newZh, setNewZh] = useState("");
 
-  useEffect(()=>{ setDraft(song.vocab); }, [song.id, song.vocab]);
+  useEffect(()=>{ setDraft(song.vocab); setNewWord(""); setNewZh(""); }, [song.id, song.vocab]);
 
   const list = useMemo(() => {
     const q = filter.trim().toLowerCase(); if (!q) return draft;
     return draft.filter(v => (v.word||"").toLowerCase().includes(q) || (v.zh||"").toLowerCase().includes(q));
   }, [draft, filter]);
 
-  function add() { setDraft([{ id: uid(), word: "", zh: "" }, ...draft]); }
+  function addFromInputs() {
+    const w = newWord.trim(); const z = newZh.trim();
+    if (!w && !z) return;
+    setDraft(d => [{ id: uid(), word: w, zh: z }, ...d]);
+    setNewWord(""); setNewZh("");
+    setEdit(true);
+  }
   function up(id: string, patch: Partial<VocabItem>) { setDraft(d => d.map(v => v.id===id ? { ...v, ...patch } : v)); }
   function del(id: string) { setDraft(d => d.filter(v => v.id!==id)); }
   function save() { onUpdate({ vocab: draft }); setEdit(false); }
 
   return (
     <div className="rounded-2xl border bg-white/70 p-4">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">單字表（含中文）</div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {edit ? (
             <>
               <ToolbarButton onClick={save}>儲存</ToolbarButton>
@@ -389,13 +397,26 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
           ) : (
             <ToolbarButton onClick={()=>setEdit(true)}>編輯</ToolbarButton>
           )}
-          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-lg border px-2 py-1 text-sm"/>
-          {edit && <ToolbarButton onClick={add}>+ 新增單字</ToolbarButton>}
+          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-lg border px-2 py-1 text-sm w-[140px] md:w-[180px]"/>
         </div>
       </div>
+
+      {/* 新增單字輸入列（RWD 下不會擠壞） */}
+      <div className="mb-3 grid grid-cols-12 gap-2">
+        <input value={newWord} onChange={e=>setNewWord(e.target.value)} placeholder="韓文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
+        <input value={newZh} onChange={e=>setNewZh(e.target.value)} placeholder="中文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
+        <ToolbarButton onClick={addFromInputs} className="col-span-12 md:col-span-2 text-center">+ 新增</ToolbarButton>
+      </div>
+
       <div className="overflow-auto rounded-xl border">
         <table className="w-full text-sm">
-          <thead className="bg-white/70"><tr className="border-b text-left"><th className="w-1/2 px-3 py-2">韓文</th><th className="w-1/2 px-3 py-2">中文</th><th className="w-28 px-3 py-2 text-right">操作</th></tr></thead>
+          <thead className="bg-white/70">
+            <tr className="border-b text-left">
+              <th className="w-1/2 px-3 py-2">韓文</th>
+              <th className="w-1/2 px-3 py-2">中文</th>
+              <th className="px-3 py-2 text-right whitespace-nowrap">操作</th>
+            </tr>
+          </thead>
           <tbody>
             {list.map(v => (
               <tr key={v.id} className="border-b">
@@ -405,12 +426,12 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
                 <td className="px-3 py-2">
                   {edit ? <input value={v.zh||""} onChange={e=>up(v.id,{zh:e.target.value})} className="w-full bg-transparent outline-none"/> : <span>{v.zh}</span>}
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
                   {edit ? <button onClick={()=>del(v.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">刪除</button> : <span className="text-xs text-zinc-400">—</span>}
                 </td>
               </tr>
             ))}
-            {list.length===0 && (<tr><td colSpan={3} className="px-3 py-6 text-center text-zinc-500">{edit?'尚未新增單字，點「+ 新增單字」':'（沒有單字）'}</td></tr>)}
+            {list.length===0 && (<tr><td colSpan={3} className="px-3 py-6 text-center text-zinc-500">{edit?'尚未新增單字，請使用上方輸入框':'（沒有單字）'}</td></tr>)}
           </tbody>
         </table>
       </div>
@@ -431,7 +452,7 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
 
   return (
     <div className="rounded-2xl border bg-white/70 p-4">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">文法點</div>
         <div className="flex items-center gap-2">
           {edit ? (
@@ -476,7 +497,7 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
   );
 }
 
-/* 單字卡維持不變 */
+/* 單字卡維持 */
 function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
   const vocab = song.vocab;
   const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
@@ -685,9 +706,9 @@ export default function App() {
             }}>{HAMBURGER} 選單</button>
             <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">DAY6 歌詞學韓文</div>
             <div className="relative ml-auto flex flex-nowrap items-center gap-2">
-              <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-60 max-w-[40vw] shrink-0 rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72" />
+              <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72" />
               {query && searchResults.length>0 && (
-                <div className="absolute right-32 top-full z-[2000] mt-1 max-h-[50vh] w-[480px] overflow-auto rounded-lg border bg-white p-2 text-sm shadow-xl">
+                <div className="absolute right-32 top-full z-[2000] mt-1 max-h-[50vh] w-[min(92vw,480px)] overflow-auto rounded-lg border bg-white p-2 text-sm shadow-xl">
                   {searchResults.map((r,i)=>(
                     <button key={i} onClick={()=>{ setSelected({ albumId: r.album.id, songId: r.song.id }); setTab('lyrics'); setQuery(''); }} className="block w-full rounded-md px-2 py-1 text-left hover:bg-black/5">
                       <div><span className="font-medium">[{r.where}]</span> {r.album.title} • {r.song.title}</div>
@@ -707,7 +728,7 @@ export default function App() {
       <div className="mx-auto max-w-[1280px] px-4 py-6">
         <div className="md:flex md:gap-4">
           {sidebarVisible && (
-            <div className="hidden w-[310px] shrink-0 rounded-xl border bg-white/70 md:block">
+            <div className="rounded-xl border bg-white/70 md:w-[317px] md:shrink-0">
               <DesktopSidebar
                 data={data}
                 selected={selected}
