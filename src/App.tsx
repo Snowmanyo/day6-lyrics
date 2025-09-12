@@ -706,8 +706,6 @@ export default function App() {
   // UI state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [tab, setTab] = useState<'lyrics' | 'vocab' | 'flash' | 'grammar'>('lyrics');
-  const [editMode, setEditMode] = useState(false); // 歌詞編輯預設關閉
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -1027,7 +1025,6 @@ export default function App() {
           <MainArea
             data={data}
             selected={selected}
-            setSelected={setSelected}
             updateSong={updateSong}
           />
         </div>
@@ -1052,12 +1049,12 @@ export default function App() {
 }
 
 /* 拆出主內容（維持原功能） */
-function MainArea({ data, selected, setSelected, updateSong }:{
+function MainArea({ data, selected, updateSong }:{
   data: AppData;
   selected: { albumId: string; songId: string } | null;
-  setSelected: (sel: { albumId: string; songId: string } | null)=>void;
   updateSong: (songId: string, patch: Partial<Song>)=>void;
 }) {
+
   const current = useMemo(() => {
     if (!selected) return null as { album: Album; song: Song } | null;
     const album = data.albums.find(a => a.id === selected.albumId); if (!album) return null;
