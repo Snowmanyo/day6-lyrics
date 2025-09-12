@@ -463,10 +463,12 @@ function deleteSong(albumId: string, songId: string) {
     nextAlbums[ai] = { ...album, songs: album.songs.filter(s => s.id !== songId) };
     return { ...d, albums: nextAlbums };
   });
+
   if (selected?.albumId === albumId && selected?.songId === songId) {
-    setSelected(null as any);
+    setSelected(null);
   }
 }
+
 
   // selection
   const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(() => {
@@ -488,7 +490,7 @@ function deleteSong(albumId: string, songId: string) {
   const [query, setQuery] = useState("");
 
   // add modals
-const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(...);
+const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(null);
 const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs'; albumId?: string }>({ type: null });
 
   // remember dark + sidebar
