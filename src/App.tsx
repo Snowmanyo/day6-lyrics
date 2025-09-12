@@ -722,12 +722,13 @@ export default function App() {
     setData(d => ({ ...d, albums: [...d.albums, album] }));
   }
   function addSongImpl(payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) {
-    const { albumId, title, releaseDate = '' , kor, zh } = payload;
-    const lyrics: LyricLine[] = alignLyrics(kor, zh).map(l => ({ id: uid(), kor: l.kor, zh: l.zh }));
-    const song: Song = { id: uid(), title, releaseDate, lyrics, vocab: [], grammar: [] };
-    setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, songs: [...a.songs, song] } : a) }));
-    setSelected({ albumId, songId: song.id }); setTab('lyrics');
-  }
+  const { albumId, title, releaseDate = '' , kor, zh } = payload;
+  const lyrics: LyricLine[] = alignLyrics(kor, zh).map(l => ({ id: uid(), kor: l.kor, zh: l.zh }));
+  const song: Song = { id: uid(), title, releaseDate, lyrics, vocab: [], grammar: [] };
+  setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, songs: [...a.songs, song] } : a) }));
+  setSelected({ albumId, songId: song.id });
+}
+
   function updateSong(songId: string, patch: Partial<Song>) {
     setData(d => ({ ...d, albums: d.albums.map(a => ({ ...a, songs: a.songs.map(s => s.id===songId ? { ...s, ...patch } : s) })) }));
   }
