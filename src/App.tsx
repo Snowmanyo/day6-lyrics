@@ -839,7 +839,6 @@ export default function App() {
         const isAlbums = header.join(",") === "albumid,title,releaseDate".toLowerCase() || header.includes("albumid") && header.includes("title") && header.includes("releasedate");
         const isSongs  = header.includes("albumid") && header.includes("title") && header.includes("songid");
         const isLyrics = header.includes("songid") && header.includes("line") && header.includes("kor") && header.includes("zh");
-        const isGrammar= header.includes("songid") && header.includes("pattern");
         // 將表頭做「去空白、小寫」正規化
         const H = header.map(h => h.replace(/\s+/g, '').toLowerCase());
         const idxOf = (keys: string[]) => { for (const k of keys) { const i = H.indexOf(k); if (i >= 0) return i; } return -1; };
@@ -946,6 +945,8 @@ export default function App() {
           alert("已匯入歌詞");
           return;
         }
+
+        
         if (isVocab) {
         const payload = rows.slice(1).filter(r => r.length > 0);
 
