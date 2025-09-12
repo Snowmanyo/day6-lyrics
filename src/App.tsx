@@ -603,22 +603,7 @@ export default function App() {
 
   // modal
   const [modal, setModal] = useState<{ type: null | 'album' | 'song'; albumId?: string }>({ type: null });
-  const AddAlbumForm = (
-    <AddAlbumModal
-      open={modal.type==='album'}
-      onClose={()=>setModal({ type: null })}
-      onSubmit={(payload)=>{ addAlbumImpl(payload.title, payload.releaseDate, payload.cover); setModal({ type: null }); }}
-    />
-  );
-  const AddSongForm = (
-    <AddSongModal
-      open={modal.type==='song'}
-      onClose={()=>setModal({ type: null })}
-      albums={data.albums}
-      defaultAlbumId={modal.albumId}
-      onSubmit={(p)=>{ addSongImpl(p); setModal({ type: null }); }}
-    />
-  );
+
 
   return (
     <div className="min-h-screen bg-amber-50/40 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100">
