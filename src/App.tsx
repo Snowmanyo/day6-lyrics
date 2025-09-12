@@ -53,7 +53,7 @@ function toCSV(rows: string[][]) {
 // ===================== Seed Data (minimal) =====================
 const SEED: AppData = {
   artist: "DAY6",
-  version: "2.0.0",
+  version: "2.1.0",
   updatedAt: new Date().toISOString(),
   albums: [
     {
@@ -76,8 +76,8 @@ function TabButton({ active, children, onClick }: { active?: boolean; children: 
   );
 }
 
-function ToolbarButton({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
-  return <button onClick={onClick} className="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 active:scale-[0.99] dark:border-zinc-700 dark:hover:bg-white/10">{children}</button>;
+function ToolbarButton({ children, onClick, type = 'button' }: { children: React.ReactNode; onClick?: () => void; type?: 'button'|'submit'|'reset' }) {
+  return <button type={type} onClick={onClick} className="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 active:scale-[0.99] dark:border-zinc-700 dark:hover:bg-white/10">{children}</button>;
 }
 
 function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
@@ -101,35 +101,73 @@ function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
   );
 }
 
+function Modal({ open, onClose, children, title }: { open: boolean; onClose: () => void; children: React.ReactNode; title: string }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[9500] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-[9600] w-[min(680px,92vw)] rounded-2xl border bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="mb-3 flex items-center justify-between"><div className="text-lg font-semibold">{title}</div><ToolbarButton onClick={onClose}>關閉</ToolbarButton></div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ===================== Sidebar (desktop) & Drawer (mobile) =====================
-function DesktopSidebar({ data, selected, onSelect, onAddAlbum, onAddSong }: {
+function DesktopSidebar({
+  data, selected, onSelect, onOpenAddAlbum,
+  onOpenEditSongs, onReorderAlbum, onReorderSong, onDeleteSong
+}: {
   data: AppData;
   selected: { albumId: string; songId: string } | null;
   onSelect: (albumId: string, songId: string) => void;
-  onAddAlbum: () => void;
-  onAddSong: (albumId: string) => void;
+  onOpenAddAlbum: () => void;
+  onOpenEditSongs: (albumId: string) => void;
+  onReorderAlbum: (from: number, to: number) => void;
+  onReorderSong: (albumId: string, from: number, to: number) => void;
+  onDeleteSong: (albumId: string, songId: string) => void;
 }) {
   return (
     <div className="h-full overflow-hidden">
       <div className="flex items-center justify-between border-b p-3 dark:border-zinc-800">
         <div className="font-semibold">專輯 / 歌曲</div>
         <div className="flex gap-2">
-          <button onClick={onAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 專輯</button>
+          <button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 專輯</button>
         </div>
       </div>
       <div className="h-[calc(100%-49px)] space-y-3 overflow-auto p-2">
-        {data.albums.sort((a,b)=>a.releaseDate.localeCompare(b.releaseDate)).map(a => (
+        {data.albums.map((a, albumIdx) => (
           <div key={a.id} className="rounded-xl border p-2 dark:border-zinc-800">
             <div className="mb-1 flex items-center justify-between">
               <div>
                 <div className="font-medium">{a.title}</div>
                 <div className="text-xs text-zinc-500">{a.releaseDate}</div>
               </div>
-              <button onClick={()=>onAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 歌曲</button>
-            </div>
+              <button
+                onClick={()=>onOpenEditSongs(a.id)}
+                className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">編輯</button>
+              </div>
             <ul className="space-y-1">
-              {a.songs.sort((x,y)=>(x.releaseDate||'').localeCompare(y.releaseDate||'')).map(s => (
-                <li key={s.id}>
+                {a.songs.map((s, songIdx) => (
+            <li
+              key={s.id}
+              draggable
+              onDragStart={(e)=>{ e.dataTransfer.setData('type','song'); e.dataTransfer.setData('aid', a.id); e.dataTransfer.setData('from', String(songIdx)); }}
+              onDragOver={(e)=>{ 
+                const t = e.dataTransfer.getData('type');
+                const aid = e.dataTransfer.getData('aid');
+                if (t==='song' && aid===a.id) e.preventDefault(); // 限同專輯排序
+              }}
+              onDrop={(e)=>{ 
+                const t = e.dataTransfer.getData('type');
+                const aid = e.dataTransfer.getData('aid');
+                if (t==='song' && aid===a.id) {
+                  const from = Number(e.dataTransfer.getData('from'));
+                  onReorderSong(a.id, from, songIdx);
+                }
+              }}
+            >
                   <button onClick={()=>onSelect(a.id, s.id)} className={`w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}>
                     <div className="truncate">{s.title}</div>
                   </button>
@@ -143,22 +181,36 @@ function DesktopSidebar({ data, selected, onSelect, onAddAlbum, onAddSong }: {
   );
 }
 
-function SideDrawer({ open, onClose, data, selected, onSelect, onAddAlbum, onAddSong }: {
+
+function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong }: {
   open: boolean; onClose: () => void;
   data: AppData;
   selected: { albumId: string; songId: string } | null;
   onSelect: (albumId: string, songId: string) => void;
-  onAddAlbum: () => void; onAddSong: (albumId: string) => void;
+  onOpenAddAlbum: () => void; onOpenAddSong: (albumId: string) => void;
 }) {
   return (
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <div className={`absolute left-0 top-0 h-full w-[300px] transform bg-white shadow-2xl transition-transform dark:bg-zinc-900 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex items-center justify-between border-b p-3 dark:border-zinc-800"><div className="font-semibold">專輯 / 歌曲</div><button className="rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" onClick={onClose}>關閉</button></div>
+        <div className="flex items-center justify-between gap-2 border-b p-3 dark:border-zinc-800"><div className="font-semibold">專輯 / 歌曲</div><div className="flex gap-2"><button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 專輯</button><button className="rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" onClick={onClose}>關閉</button></div></div>
         <div className="h-[calc(100%-49px)] space-y-3 overflow-auto p-3">
           {data.albums.sort((a,b)=>a.releaseDate.localeCompare(b.releaseDate)).map(a => (
-            <div key={a.id} className="rounded-xl border p-2 dark:border-zinc-800">
-              <div className="mb-1 flex items-center justify-between"><div><div className="font-medium">{a.title}</div><div className="text-xs text-zinc-500">{a.releaseDate}</div></div><button onClick={()=>onAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 歌曲</button></div>
+      <div
+        key={a.id}
+        className="rounded-xl border p-2 dark:border-zinc-800"
+        draggable
+        onDragStart={(e)=>{ e.dataTransfer.setData('type','album'); e.dataTransfer.setData('from', String(albumIdx)); }}
+        onDragOver={(e)=>{ if (e.dataTransfer.getData('type')==='album') e.preventDefault(); }}
+        onDrop={(e)=>{ 
+          const t = e.dataTransfer.getData('type'); 
+          if (t==='album') {
+            const from = Number(e.dataTransfer.getData('from'));
+            onReorderAlbum(from, albumIdx);
+          }
+        }}
+      >
+              <div className="mb-1 flex items-center justify-between"><div><div className="font-medium">{a.title}</div><div className="text-xs text-zinc-500">{a.releaseDate}</div></div><button onClick={()=>onOpenAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10">+ 歌曲</button></div>
               <ul className="space-y-1">{a.songs.map(s => (<li key={s.id}><button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10 ${selected?.songId===s.id ? 'bg-black/5 font-medium dark:bg-white/10' : ''}`}><div className="truncate">{s.title}</div></button></li>))}</ul>
             </div>
           ))}
@@ -342,6 +394,43 @@ export default function App() {
     return SEED;
   });
   useEffect(() => { try { localStorage.setItem('day6_lyrics_app_data_v2', JSON.stringify({ ...data, updatedAt: new Date().toISOString() })); } catch {} }, [data]);
+  // ===== Drag & Drop helpers =====
+function arrayMove<T>(arr: T[], from: number, to: number) {
+  const next = [...arr];
+  const item = next.splice(from, 1)[0];
+  next.splice(to < 0 ? 0 : to, 0, item);
+  return next;
+}
+
+function reorderAlbum(fromIdx: number, toIdx: number) {
+  setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) }));
+}
+
+function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
+  setData(d => {
+    const ai = d.albums.findIndex(a => a.id === albumId);
+    if (ai < 0) return d;
+    const album = d.albums[ai];
+    const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
+    const nextAlbums = [...d.albums];
+    nextAlbums[ai] = { ...album, songs: nextSongs };
+    return { ...d, albums: nextAlbums };
+  });
+}
+
+function deleteSong(albumId: string, songId: string) {
+  setData(d => {
+    const ai = d.albums.findIndex(a => a.id === albumId);
+    if (ai < 0) return d;
+    const album = d.albums[ai];
+    const nextAlbums = [...d.albums];
+    nextAlbums[ai] = { ...album, songs: album.songs.filter(s => s.id !== songId) };
+    return { ...d, albums: nextAlbums };
+  });
+  if (selected?.albumId === albumId && selected?.songId === songId) {
+    setSelected(null as any);
+  }
+}
 
   // selection
   const [selected, setSelected] = useState<{ albumId: string; songId: string } | null>(() => {
@@ -362,6 +451,9 @@ export default function App() {
   const [editMode, setEditMode] = useState(true);
   const [query, setQuery] = useState("");
 
+  // add modals
+const [modal, setModal] = useState<{ type: null | 'album' | 'song' | 'edit-songs'; albumId?: string }>({ type: null });
+
   // remember dark + sidebar
   useEffect(() => {
     try { const savedTheme = localStorage.getItem('lyrics_theme'); const isDark = savedTheme === 'dark'; setDark(isDark); document.documentElement.classList.toggle('dark', isDark); } catch {}
@@ -376,17 +468,12 @@ export default function App() {
   };
 
   // CRUD helpers
-  function addAlbum() {
-    const title = prompt('專輯名稱'); if (!title) return;
-    const releaseDate = prompt('發行日 (YYYY-MM-DD)') || new Date().toISOString().slice(0,10);
+  function addAlbumImpl(title: string, releaseDate: string) {
     const album: Album = { id: uid(), title, releaseDate, songs: [] };
     setData(d => ({ ...d, albums: [...d.albums, album] }));
   }
-  function addSong(albumId: string) {
-    const title = prompt('歌曲名稱'); if (!title) return;
-    const releaseDate = prompt('發行日 (YYYY-MM-DD)') || '';
-    const kor = prompt('貼上【韓文歌詞】逐行') || '';
-    const zh  = prompt('貼上【中文翻譯】逐行（可不同長度）') || '';
+  function addSongImpl(payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) {
+    const { albumId, title, releaseDate = '' , kor, zh } = payload;
     const lyrics: LyricLine[] = alignLyrics(kor, zh).map(l => ({ id: uid(), kor: l.kor, zh: l.zh }));
     const song: Song = { id: uid(), title, releaseDate, lyrics, vocab: [], grammar: [] };
     setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, songs: [...a.songs, song] } : a) }));
@@ -443,21 +530,40 @@ export default function App() {
           <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>exportGrammarCSV(current.song)}>匯出文法 CSV（此歌）</button>
         </>
       )}
-      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10">匯入 JSON<input type="file" className="hidden" accept="application/json" onChange={e=>{ const f=e.target.files?.[0]; if (f) importJSON(f); }}/></label>
+      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5 dark:hover:bg白/10">匯入 JSON<input type="file" className="hidden" accept="application/json" onChange={e=>{ const f=e.target.files?.[0]; if (f) importJSON(f); }}/></label>
     </>
   );
 
   const NewMenu = (
     <>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={addAlbum}>新增專輯</button>
-      {current && <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>addSong(current.album.id)}>新增歌曲（此專輯）</button>}
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>setModal({ type: 'album' })}>新增專輯</button>
+      {current && <button className="block w-full px-3 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10" onClick={()=>setModal({ type: 'song', albumId: current.album.id })}>新增歌曲（此專輯）</button>}
     </>
+  );
+
+  // ======= Modal Forms =======
+  const AddAlbumForm = (
+    <AddAlbumModal
+      open={modal.type==='album'}
+      onClose={()=>setModal({ type: null })}
+      onSubmit={(payload)=>{ addAlbumImpl(payload.title, payload.releaseDate); setModal({ type: null }); }}
+    />
+  );
+
+  const AddSongForm = (
+    <AddSongModal
+      open={modal.type==='song'}
+      onClose={()=>setModal({ type: null })}
+      albums={data.albums}
+      defaultAlbumId={modal.albumId}
+      onSubmit={(p)=>{ addSongImpl(p); setModal({ type: null }); }}
+    />
   );
 
   return (
     <div className="min-h-screen bg-amber-50/40 text-gray-900 dark:bg-zinc-950 dark:text-zinc-100">
       {/* Top Bar */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
+      <header className="sticky top-0 z-40 border-b bg白/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
         <div className="mx-auto max-w-[1280px] px-4">
           <div className="flex flex-nowrap items-center gap-2 py-3">
             <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10" title="切換側邊選單" onClick={() => {
@@ -472,7 +578,7 @@ export default function App() {
               {query && searchResults.length>0 && (
                 <div className="absolute right-32 top-full z-[2000] mt-1 max-h-[50vh] w-[480px] overflow-auto rounded-lg border bg-white p-2 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
                   {searchResults.map((r,i)=>(
-                    <button key={i} onClick={()=>{ setSelected({ albumId: r.album.id, songId: r.song.id }); setTab('lyrics'); setQuery(''); }} className="block w-full rounded-md px-2 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10">
+                    <button key={i} onClick={()=>{ setSelected({ albumId: r.album.id, songId: r.song.id }); setTab('lyrics'); setQuery(''); }} className="block w-full rounded-md px-2 py-1 text-left hover:bg黑/5 dark:hover:bg白/10">
                       <div><span className="font-medium">[{r.where}]</span> {r.album.title} • {r.song.title}</div>
                       <div className="truncate text-xs text-zinc-500">{r.snippet}</div>
                     </button>
@@ -494,12 +600,16 @@ export default function App() {
           {sidebarVisible && (
             <div className="hidden w-[280px] shrink-0 rounded-xl border bg-white/70 dark:border-zinc-800 dark:bg-zinc-900/60 md:block">
               <DesktopSidebar
-                data={data}
-                selected={selected}
-                onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
-                onAddAlbum={addAlbum}
-                onAddSong={addSong}
-              />
+              data={data}
+              selected={selected}
+              onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
+              onOpenAddAlbum={()=>setModal({ type: 'album' })}
+              onOpenEditSongs={(aid)=>setModal({ type: 'edit-songs', albumId: aid })}
+              onReorderAlbum={reorderAlbum}
+              onReorderSong={reorderSong}
+              onDeleteSong={deleteSong}
+            />
+
             </div>
           )}
 
@@ -509,7 +619,23 @@ export default function App() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-2xl font-bold">{current.song.title}</div>
+                <SongTitleEditable
+                  title={current.song.title}
+                  onSave={(nextTitle)=>{
+                    setData(d => {
+                      const ai = d.albums.findIndex(a => a.id === current.album.id);
+                      if (ai < 0) return d;
+                      const si = d.albums[ai].songs.findIndex(s => s.id === current.song.id);
+                      if (si < 0) return d;
+                      const nextAlbums = [...d.albums];
+                      const targetAlbum = nextAlbums[ai];
+                      const nextSongs = [...targetAlbum.songs];
+                      nextSongs[si] = { ...nextSongs[si], title: nextTitle };
+                      nextAlbums[ai] = { ...targetAlbum, songs: nextSongs };
+                      return { ...d, albums: nextAlbums };
+                    });
+                  }}
+                />
                     <div className="text-xs text-zinc-500">{current.album.title} • {current.song.releaseDate || current.album.releaseDate}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -539,9 +665,156 @@ export default function App() {
         data={data}
         selected={selected}
         onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
-        onAddAlbum={addAlbum}
-        onAddSong={addSong}
+        onOpenAddAlbum={()=>setModal({ type: 'album' })}
+        onOpenAddSong={(aid)=>setModal({ type: 'song', albumId: aid })}
       />
+
+      {AddAlbumForm}
+      {AddSongForm}
     </div>
+  );
+}
+function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: string)=>void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(title);
+
+  useEffect(()=>{ setVal(title); }, [title]);
+
+  if (!editing) {
+    return (
+      <div className="text-2xl font-bold flex items-center gap-2">
+        <span className="truncate">{title}</span>
+        <button
+          className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+          onClick={()=>setEditing(true)}
+          title="編輯歌名"
+        >
+          ✎
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        value={val}
+        onChange={e=>setVal(e.target.value)}
+        className="text-2xl font-bold rounded-md border px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+        autoFocus
+      />
+      <button
+        className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+        onClick={()=>{ onSave(val.trim() || title); setEditing(false); }}
+      >儲存</button>
+      <button
+        className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+        onClick={()=>{ setVal(title); setEditing(false); }}
+      >取消</button>
+    </div>
+  );
+}
+
+// ===================== Modal Components =====================
+function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: () => void; onSubmit: (payload: { title: string; releaseDate: string }) => void }) {
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
+  useEffect(()=>{ if (open) { setTitle(""); setDate(new Date().toISOString().slice(0,10)); } }, [open]);
+  return (
+    <Modal open={open} onClose={onClose} title="新增專輯">
+      <form onSubmit={(e)=>{ e.preventDefault(); if (!title.trim()) return; onSubmit({ title: title.trim(), releaseDate: date || new Date().toISOString().slice(0,10) }); }} className="space-y-3">
+        <div>
+          <div className="mb-1 text-xs text-zinc-500">專輯名稱</div>
+          <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900" placeholder="例如：The Book of Us"/>
+        </div>
+        <div>
+          <div className="mb-1 text-xs text-zinc-500">發行日</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"/>
+        </div>
+        <div className="flex justify-end gap-2"><ToolbarButton onClick={onClose}>取消</ToolbarButton><ToolbarButton type="submit">新增</ToolbarButton></div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ===== Edit Songs (per album) ===== */
+{modal.type === 'edit-songs' && (
+  <Modal
+    open={true}
+    onClose={()=>setModal({ type: null })}
+    title="編輯歌曲清單（刪除；排序請到側欄拖曳）"
+  >
+    {(() => {
+      const aid = modal.albumId!;
+      const album = data.albums.find(a => a.id === aid);
+      if (!album) return <div className="text-sm text-red-500">找不到專輯</div>;
+      return (
+        <div className="space-y-2">
+          {album.songs.map(s => (
+            <div key={s.id} className="flex items-center justify-between rounded-lg border px-3 py-2 dark:border-zinc-700">
+              <div className="truncate">{s.title}</div>
+              <div className="flex gap-2">
+                <button
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+                  onClick={()=>{ setSelected({ albumId: album.id, songId: s.id }); setModal({ type: null }); }}
+                >前往</button>
+                <button
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 dark:border-zinc-700 dark:hover:bg-white/10"
+                  onClick={()=>onDeleteSong(album.id, s.id)}
+                >刪除</button>
+              </div>
+            </div>
+          ))}
+          {album.songs.length === 0 && <div className="text-sm text-zinc-500">此專輯目前沒有歌曲</div>}
+        </div>
+      );
+    })()}
+  </Modal>
+)}
+
+function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { open: boolean; onClose: () => void; onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) => void; albums: Album[]; defaultAlbumId?: string }) {
+  const [albumId, setAlbumId] = useState<string>(defaultAlbumId || albums[0]?.id || "");
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
+  const [kor, setKor] = useState("");
+  const [zh , setZh ] = useState("");
+
+  useEffect(()=>{ if (open) {
+    setAlbumId(defaultAlbumId || albums[0]?.id || "");
+    setTitle(""); setDate(""); setKor(""); setZh("");
+  } }, [open, defaultAlbumId, albums.length]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="新增歌曲">
+      <form onSubmit={(e)=>{ e.preventDefault(); if (!albumId || !title.trim()) return; onSubmit({ albumId, title: title.trim(), releaseDate: date, kor, zh }); }} className="space-y-3">
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">選擇專輯</div>
+            <select value={albumId} onChange={e=>setAlbumId(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900">
+              {albums.map(a => (<option key={a.id} value={a.id}>{a.title}（{a.releaseDate}）</option>))}
+            </select>
+          </div>
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">發行日（可空）</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"/>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-xs text-zinc-500">歌名</div>
+          <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900" placeholder="例如：Congratulations"/>
+        </div>
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句）</div>
+            <textarea value={kor} onChange={e=>setKor(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"/>
+          </div>
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句）</div>
+            <textarea value={zh} onChange={e=>setZh(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"/>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2"><ToolbarButton onClick={onClose}>取消</ToolbarButton><ToolbarButton type="submit">新增</ToolbarButton></div>
+      </form>
+    </Modal>
   );
 }
