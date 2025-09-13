@@ -14,11 +14,13 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const today = () => new Date().toISOString().slice(0, 10);
 
 function download(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const BOM = "\uFEFF"; // 加 UTF-8 BOM，Excel 會用 UTF-8 開檔
+  const blob = new Blob([BOM, text], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
 }
+
 function alignLyrics(korRaw: string, zhRaw: string) {
   const kor = (korRaw || "").split(/\r?\n/);
   const zh = (zhRaw || "").split(/\r?\n/);
@@ -811,17 +813,29 @@ export default function App() {
 
   /* ===== 匯入（支援 TSV；只用 專輯+歌名；必要時自動建立） ===== */
   function importCSV(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        let text = String(reader.result || "");
-        // TSV 轉 CSV（若第一行沒有逗號但有 tab）
-        const firstLine = text.split(/\r?\n/, 1)[0] || "";
-        if (!firstLine.includes(",") && firstLine.includes("\t")) {
-          text = text.replace(/\t/g, ",");
-        }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      // 先以 ArrayBuffer 讀取，再依 BOM/內容判斷編碼
+      const buf = reader.result as ArrayBuffer;
+      const bytes = new Uint8Array(buf);
 
-        const rows = parseCSV(text);
+      // 判斷 BOM
+      let encoding: string = 'utf-8';
+      if (bytes.length >= 2) {
+        if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
+        else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
+      }
+      // decode
+      let text = new TextDecoder(encoding as any).decode(bytes);
+
+      // TSV -> CSV（若第一行沒有逗號但有 tab）
+      const firstLine = text.split(/\r?\n/, 1)[0] || "";
+      if (!firstLine.includes(",") && firstLine.includes("\t")) {
+        text = text.replace(/\t/g, ",");
+      }
+
+      const rows = parseCSV(text);
         if (!rows.length) { alert("找不到資料列"); return; }
 
         // 標頭正規化
@@ -1061,7 +1075,7 @@ export default function App() {
         alert("CSV/TSV 解析或匯入失敗");
       }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   // 匯出/匯入選單（CSV/TSV；用專輯+歌名）
@@ -1071,7 +1085,7 @@ export default function App() {
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsCSV}>專輯（含排序）</button>
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsCSV}>歌曲清單</button>
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsCSVAll}>歌詞</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg黑/5" onClick={exportVocabCSVAll}>單字</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabCSVAll}>單字</button>
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarCSVAll}>文法</button>
       <div className="my-1 border-t" />
       <div className="px-3 py-1 text-xs text-zinc-500">下載範本</div>
@@ -1086,7 +1100,7 @@ export default function App() {
       <div className="px-3 py-1 text-xs text-zinc-500">匯入（CSV 或 TSV）</div>
       <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
         選擇檔案
-        <input type="file" className="hidden" accept=".csv,.tsv,text/csv,text/tab-separated-values" onChange={e=>{ const f=e.target.files?.[0]; if (f) importCSV(f); }}/>
+        <input type="file" className="hidden" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={e=>{ const f=e.target.files?.[0]; if (f) importCSV(f); }}/>
       </label>
       <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
         表頭範例：<b>albumTitle, songTitle</b>…（支援中文表頭：專輯／歌名／韓文／中文／文法／說明／例句）
