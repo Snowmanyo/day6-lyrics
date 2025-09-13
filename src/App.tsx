@@ -28,11 +28,12 @@ function alignLyrics(korRaw: string, zhRaw: string) {
   return out;
 }
 // 放在 alignLyrics 之後
-function trimLyricsTail(rows: { kor: string; zh: string }[]) {
+function trimLyricsTail<T extends { kor: string; zh: string }>(rows: T[]): T[] {
   let last = rows.length - 1;
   while (last >= 0 && rows[last].kor.trim() === "" && rows[last].zh.trim() === "") last--;
   return rows.slice(0, last + 1);
 }
+
 
 const isHangul = (s: string) => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(s);
 function tokenizeKorean(text: string) {
@@ -998,10 +999,12 @@ export default function App() {
               songs: a.songs.map(s => {
                 const pack = grouped[s.id];
                 if (!pack) return s;
-                const sorted = pack.sort((x,y)=>x.line - y.line)
-                                   .map(x => ({ id: uid(), kor: x.kor, zh: x.zh }));
-                // 裁掉尾端全空白行（沿用你前面加過的工具 trimLyricsTail）
-                return { ...s, lyrics: trimLyricsTail(sorted) };
+                const withId = pack
+                .sort((x,y)=>x.line - y.line)
+                .map(x => ({ id: uid(), kor: x.kor, zh: x.zh } as LyricLine));
+
+              return { ...s, lyrics: trimLyricsTail<LyricLine>(withId) };
+
               })
             }))
           };
