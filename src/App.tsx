@@ -51,6 +51,16 @@ function tokenizeKorean(text: string) {
     .filter(Boolean)
     .filter(isHangul);
 }
+function toCSV(rows: (string | number | null | undefined)[][]) {
+  return rows.map(r =>
+    r.map(c => {
+      const s = String(c ?? "");
+      const needQuote = /[",\n]/.test(s);
+      const escaped = s.replace(/"/g, '""');
+      return needQuote ? `"${escaped}"` : escaped;
+    }).join(",")
+  ).join("\n");
+}
 function toTSV(rows: (string | number | null | undefined)[][]) {
   return rows.map(r => r.map(c => String(c ?? "")).join("\t")).join("\n");
 }
@@ -83,7 +93,7 @@ function fileToDataURL(file: File): Promise<string> {
   return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
 }
 
-/* ===== 匯入工具（單一檔：只用專輯+歌名必填；其餘選填；支援 TSV/UTF-16） ===== */
+/* ===== 匯入工具（只用專輯+歌名；寬鬆表頭、支援 TSV/UTF-16） ===== */
 const BOM = "\uFEFF";
 const stripCell = (s: string) => (s || "").replace(BOM, "").trim();
 const normalizeHeader = (s: string) =>
@@ -111,8 +121,8 @@ const SEED: AppData = {
       releaseDate: "2015-09-07",
       cover: "",
       songs: [
-        { id: uid(), title: "Congratulations", releaseDate: "2015-09-07", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] },
-        { id: uid(), title: "Freely", releaseDate: "2015-09-07", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] },
+        { id: uid(), title: "Congratulations", releaseDate: "2015-09-07", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] },
+        { id: uid(), title: "Freely",           releaseDate: "2015-09-07", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] },
       ],
     },
   ],
@@ -140,7 +150,7 @@ function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
     <div ref={ref} className="relative">
       <ToolbarButton onClick={() => setOpen(o => !o)}>{label}</ToolbarButton>
       {open && (
-        <div className="absolute right-0 z-[9999] mt-1 w-72 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
+        <div className="absolute right-0 z-[9999] mt-1 w-64 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
           {items}
         </div>
       )}
@@ -197,7 +207,7 @@ function DesktopSidebar({
   onToggleCollapse: (albumId: string)=>void;
 }) {
   return (
-    <aside className="hidden w-[317px] shrink-0 overflow-y-auto border-r p-3 md:block">
+    <aside className="w-[317px] shrink-0 overflow-y-auto border-r p-3 hidden md:block">
       <div className="w-[284px]">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-semibold">專輯 / 歌曲</div>
@@ -524,14 +534,14 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
           ) : (
             <ToolbarButton onClick={()=>setEdit(true)}>編輯</ToolbarButton>
           )}
-          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="w-[140px] rounded-lg border px-2 py-1 text-sm outline-none md:w-[180px]"/>
+          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-lg border px-2 py-1 text-sm w-[140px] md:w-[180px]"/>
         </div>
       </div>
 
       <div className="mb-3 grid grid-cols-12 gap-2">
         <input value={newWord} onChange={e=>setNewWord(e.target.value)} placeholder="韓文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
         <input value={newZh} onChange={e=>setNewZh(e.target.value)} placeholder="中文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
-        <ToolbarButton onClick={addFromInputs} className="col-span-12 text-center md:col-span-2">+ 新增</ToolbarButton>
+        <ToolbarButton onClick={addFromInputs} className="col-span-12 md:col-span-2 text-center">+ 新增</ToolbarButton>
       </div>
 
       <div className="overflow-auto rounded-xl border">
@@ -540,10 +550,10 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
             <tr className="border-b text-left">
               <th className="w-1/2 px-3 py-2">韓文</th>
               <th className="w-1/2 px-3 py-2">中文</th>
-              <th className="whitespace-nowrap px-3 py-2 text-right">操作</th>
+              <th className="px-3 py-2 text-right whitespace-nowrap">操作</th>
             </tr>
           </thead>
-        <tbody>
+          <tbody>
             {list.map(v => (
               <tr key={v.id} className="border-b">
                 <td className="px-3 py-2">
@@ -552,7 +562,7 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
                 <td className="px-3 py-2">
                   {edit ? <input value={v.zh||""} onChange={e=>up(v.id,{zh:e.target.value})} className="w-full bg-transparent outline-none"/> : <span>{v.zh}</span>}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
                   {edit ? <button onClick={()=>del(v.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">刪除</button> : <span className="text-xs text-zinc-400">—</span>}
                 </td>
               </tr>
@@ -621,6 +631,48 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
   );
 }
 
+function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
+  const vocab = song.vocab;
+  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
+  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
+  const [reveal, setReveal] = useState(false);
+  useEffect(()=>{ setQueue(vocab.map((_,i)=>i)); setMeta(vocab.map(()=>({firstSeen:false}))); setReveal(false); }, [vocab.map(v=>v.id).join(',')]);
+  const total = vocab.length; const currentIdx = queue[0] ?? null; const current = currentIdx != null ? vocab[currentIdx] : null; const firstSeenCount = meta.filter(m => m.firstSeen).length;
+  function grade(level: 'again' | 'good' | 'easy') {
+    if (currentIdx == null) return;
+    setMeta(m => { const next = [...m]; if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true; return next; });
+    setQueue(q => { const rest = q.slice(1); if (level === 'again') { const insertAt = Math.min(2, rest.length); return [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)]; } if (level === 'good') return [...rest, currentIdx]; return rest; });
+  }
+  if (total === 0) return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center">
+      <div className="mb-2 text-sm">尚無單字</div>
+      <ToolbarButton onClick={()=>{
+        const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
+        onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
+      }}>從歌詞自動擷取</ToolbarButton>
+    </div>
+  );
+  if (current == null) return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center">
+      <div className="mb-2 text-sm">本輪完成！</div>
+      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
+    </div>
+  );
+  return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center">
+      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
+      <div className="text-2xl font-bold">{current.word}</div>
+      <div className="mt-2 text-lg text-zinc-700">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
+      <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">不熟</button>
+        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">一般</button>
+        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">很熟</button>
+      </div>
+    </div>
+  );
+}
+
 /* Inline title editor（歌曲標題✎） */
 function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: string)=>void }) {
   const [editing, setEditing] = useState(false);
@@ -628,7 +680,7 @@ function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: strin
   useEffect(()=>{ setVal(title); }, [title]);
   if (!editing) {
     return (
-      <div className="flex items-center gap-2 text-2xl font-bold">
+      <div className="text-2xl font-bold flex items-center gap-2">
         <span className="truncate">{title}</span>
         <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>setEditing(true)} title="編輯歌名">✎</button>
       </div>
@@ -675,15 +727,14 @@ export default function App() {
     setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) }));
   }
   function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
-  setData(d => {
-    const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
-    const album = d.albums[ai];
-    const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
-    const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: nextSongs };
-    return { ...d, albums: nextAlbums };
-  });
-}
-
+    setData(d => {
+      const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
+      const album = d.albums[ai];
+      const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
+      const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: nextSongs };
+      return { ...d, albums: nextAlbums };
+    });
+  }
   function deleteSong(albumId: string, songId: string) {
     setData(d => {
       const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
@@ -733,8 +784,8 @@ export default function App() {
     const album: Album = { id: uid(), title: title.trim() || "(未命名)", releaseDate: releaseDate || today(), cover: cover || "", songs: [] };
     setData(d => ({ ...d, albums: [...d.albums, album] }));
   }
-  function addSongImpl(payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string; lyricist?: string; composer?: string }) {
-    const { albumId, title, releaseDate = '' , kor, zh, lyricist = "", composer = "" } = payload;
+  function addSongImpl(payload: { albumId: string; title: string; releaseDate?: string; lyricist?: string; composer?: string; kor: string; zh: string }) {
+    const { albumId, title, releaseDate = '' , lyricist="", composer="", kor, zh } = payload;
     const lyrics: LyricLine[] = alignLyrics(kor, zh).map(l => ({ id: uid(), kor: l.kor, zh: l.zh }));
     const song: Song = { id: uid(), title: title.trim() || "(未命名)", releaseDate, lyricist, composer, lyrics, vocab: [], grammar: [] };
     setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, songs: [...a.songs, song] } : a) }));
@@ -744,7 +795,7 @@ export default function App() {
     setData(d => ({ ...d, albums: d.albums.map(a => ({ ...a, songs: a.songs.map(s => s.id===songId ? { ...s, ...patch } : s) })) }));
   }
 
-  /* ===== 匯出（TXT/TSV；可各別，也提供「整包」單一檔） ===== */
+  /* ===== 匯出（分檔 TXT/TSV） ===== */
   function exportAlbumsTXT() {
     const rows: (string|number)[][] = [["albumTitle","releaseDate","cover"]];
     for (const a of data.albums) rows.push([a.title, a.releaseDate, a.cover||""]);
@@ -770,7 +821,8 @@ export default function App() {
     for (const a of data.albums) for (const s of a.songs) for (const g of s.grammar) rows.push([a.title, s.title, g.pattern, g.explain||"", g.example||""]);
     download(`grammar.txt`, toTSV(rows));
   }
-  // 整包匯出：單一檔
+
+  // 整包匯出（單一檔）
   function exportAllTXT() {
     const rows: (string|number)[][] = [[
       "albumTitle","albumReleaseDate","cover",
@@ -781,7 +833,7 @@ export default function App() {
     ]];
     for (const a of data.albums) {
       for (const s of a.songs) {
-        // 歌詞
+        // 歌詞（至少留一行）
         if (s.lyrics.length === 0) {
           rows.push([a.title,a.releaseDate,a.cover||"", s.title,s.releaseDate||"", s.lyricist||"", s.composer||"", "", "", "", "", "", "", ""]);
         } else {
@@ -798,7 +850,7 @@ export default function App() {
     download(`all-in-one.txt`, toTSV(rows));
   }
 
-  // 範本（整包：單一檔）
+  // 範本（整包：單一檔，TSV）
   function downloadAllTemplate() {
     const header = [[
       "albumTitle","songTitle",
@@ -841,10 +893,10 @@ export default function App() {
         const col = {
           albumTitle:   idxOfAny(H, ["albumtitle","album","專輯","專輯名稱","專輯名"]),
           songTitle:    idxOfAny(H, ["songtitle","song","title","歌曲","歌名"]),
-          albumDate:    idxOfAny(H, ["albumreleasedate","albumdate","專輯發佈日","專輯發佈日期","專輯发布日期","專輯日期"]),
+          albumDate:    idxOfAny(H, ["albumreleasedate","albumdate","專輯發佈","專輯發布","發佈日","發佈日期"]),
           cover:        idxOfAny(H, ["cover","封面","圖片","封面圖"]),
-          songDate:     idxOfAny(H, ["songreleasedate","releasedate","date","發佈日","發佈日期","發布日","發布日期"]),
-          lyricist:     idxOfAny(H, ["lyricist","lyricsby","作詞","填詞"]),
+          songDate:     idxOfAny(H, ["songreleasedate","songdate","日期","發布日","發布日期"]),
+          lyricist:     idxOfAny(H, ["lyricist","lyricsby","作詞"]),
           composer:     idxOfAny(H, ["composer","composedby","作曲"]),
           line:         idxOfAny(H, ["line","行","行號","序"]),
           kor:          idxOfAny(H, ["kor","korean","kr","han","韓文"]),
@@ -854,100 +906,95 @@ export default function App() {
           explain:      idxOfAny(H, ["explain","說明"]),
           example:      idxOfAny(H, ["example","例句"]),
         };
+        const has = (i: number) => i >= 0;
 
-        if (col.albumTitle < 0 || col.songTitle < 0) {
-          alert("缺少必要欄位：albumTitle、songTitle");
-          return;
-        }
-
+        // 逐列寫入（albumTitle, songTitle 必填；其餘有填才寫）
         const body = rows.slice(1);
-
         setData(d => {
           const albums = [...d.albums].map(a => ({ ...a, songs: [...a.songs] }));
-          let ok = 0, skip = 0;
+          let ok = 0, skip = 0, rowNo = 0;
+
+          function getOrCreateAlbum(title: string): Album {
+            const key = title.toLowerCase();
+            let idx = albums.findIndex(a => a.title.toLowerCase() === key);
+            if (idx < 0) {
+              const newA: Album = { id: uid(), title, releaseDate: today(), cover: "", songs: [] };
+              albums.push(newA);
+              return newA;
+            }
+            return albums[idx];
+          }
+          function getOrCreateSong(album: Album, title: string): Song {
+            let s = album.songs.find(x => x.title.toLowerCase() === title.toLowerCase());
+            if (!s) { s = { id: uid(), title, releaseDate: "", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] }; album.songs.push(s); }
+            return s;
+          }
 
           for (const r of body) {
-            const aTitle = stripCell(r[col.albumTitle]||"");
-            const sTitle = stripCell(r[col.songTitle] ||"");
+            rowNo++;
+            const aTitle = has(col.albumTitle) ? stripCell(r[col.albumTitle]) : "";
+            const sTitle = has(col.songTitle)  ? stripCell(r[col.songTitle ]) : "";
             if (!aTitle || !sTitle) { skip++; continue; }
 
-            const albumDate = col.albumDate >= 0 ? stripCell(r[col.albumDate]) : "";
-            const cover     = col.cover     >= 0 ? stripCell(r[col.cover])     : "";
-            const songDate  = col.songDate  >= 0 ? stripCell(r[col.songDate])  : "";
-            const lyricist  = col.lyricist  >= 0 ? stripCell(r[col.lyricist])  : "";
-            const composer  = col.composer  >= 0 ? stripCell(r[col.composer])  : "";
-            const line      = col.line      >= 0 ? Number(stripCell(r[col.line])) || NaN : NaN;
-            const kor       = col.kor       >= 0 ? stripCell(r[col.kor])       : "";
-            const zh        = col.zh        >= 0 ? stripCell(r[col.zh])        : "";
-            const word      = col.word      >= 0 ? stripCell(r[col.word])      : "";
-            const pattern   = col.pattern   >= 0 ? stripCell(r[col.pattern])   : "";
-            const explain   = col.explain   >= 0 ? stripCell(r[col.explain])   : "";
-            const example   = col.example   >= 0 ? stripCell(r[col.example])   : "";
+            const alb = getOrCreateAlbum(aTitle);
+            if (has(col.albumDate)) { const v = stripCell(r[col.albumDate]); if (v) alb.releaseDate = v; }
+            if (has(col.cover))     { const v = stripCell(r[col.cover    ]); if (v) alb.cover = v; }
 
-            // 查/建 專輯
-            let ai = albums.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-            if (ai < 0) { albums.push({ id: uid(), title: aTitle, releaseDate: albumDate || today(), cover, songs: [] }); ai = albums.length - 1; }
-            else {
-              if (albumDate) albums[ai].releaseDate = albumDate;
-              if (cover) albums[ai].cover = cover;
+            const song = getOrCreateSong(alb, sTitle);
+            if (has(col.songDate)) { const v = stripCell(r[col.songDate]); if (v) song.releaseDate = v; }
+            if (has(col.lyricist)) { const v = stripCell(r[col.lyricist]); if (v) song.lyricist = v; }
+            if (has(col.composer)) { const v = stripCell(r[col.composer]); if (v) song.composer = v; }
+
+            const iLine = has(col.line) ? Number(stripCell(r[col.line])) || rowNo : rowNo;
+            const vKor  = has(col.kor) ? stripCell(r[col.kor]) : "";
+            const vZh   = has(col.zh ) ? stripCell(r[col.zh ]) : "";
+            if (vKor || vZh) {
+              (song as any).__importLyrics ||= [];
+              (song as any).__importLyrics.push({ line: iLine, kor: vKor, zh: vZh });
             }
 
-            // 查/建 歌曲
-            let si = albums[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-            if (si < 0) { albums[ai].songs.push({ id: uid(), title: sTitle, releaseDate: songDate, lyricist, composer, lyrics: [], vocab: [], grammar: [] }); si = albums[ai].songs.length - 1; }
-            else {
-              const s = albums[ai].songs[si];
-              if (songDate) s.releaseDate = songDate;
-              if (lyricist) s.lyricist = lyricist;
-              if (composer) s.composer = composer;
+            const w = has(col.word) ? stripCell(r[col.word]) : "";
+            if (w) {
+              (song as any).__importVocab ||= [];
+              (song as any).__importVocab.push({ word: w, zh: has(col.zh) ? stripCell(r[col.zh]) : "" });
             }
 
-            // 累積內容（同一列可同時提供多種資料）
-            const s = albums[ai].songs[si] as Song & {
-              __importLyrics?: { line:number; kor:string; zh:string }[];
-              __importVocab?: { word:string; zh:string }[];
-              __importGrammar?: { pattern:string; explain:string; example:string }[];
-            };
-            if (kor || (!Number.isNaN(line) && !isNaN(line))) {
-              const lnum = Number.isNaN(line) ? (s.__importLyrics?.length ?? 0) + 1 : line;
-              (s.__importLyrics ||= []).push({ line: lnum, kor, zh });
+            const pat = has(col.pattern) ? stripCell(r[col.pattern]) : "";
+            if (pat) {
+              (song as any).__importGrammar ||= [];
+              (song as any).__importGrammar.push({
+                pattern: pat,
+                explain: has(col.explain) ? stripCell(r[col.explain]) : "",
+                example: has(col.example) ? stripCell(r[col.example]) : "",
+              });
             }
-            if (word) (s.__importVocab ||= []).push({ word, zh });
-            if (pattern) (s.__importGrammar ||= []).push({ pattern, explain, example });
 
             ok++;
           }
 
-          // 寫回累積的內容
+          // 寫回 lyrics/vocab/grammar
           for (const a of albums) {
             for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & {
-                __importLyrics?: { line:number; kor:string; zh:string }[];
-                __importVocab?: { word:string; zh:string }[];
-                __importGrammar?: { pattern:string; explain:string; example:string }[];
-              };
+              const s = a.songs[i] as any;
               if (s.__importLyrics) {
-                const withId = s.__importLyrics
-                  .sort((x,y)=> (x.line||0) - (y.line||0))
-                  .map(x => ({ id: uid(), kor: x.kor, zh: x.zh } as LyricLine));
-                (s as Song).lyrics = trimLyricsTail<LyricLine>(withId);
+                const withId: LyricLine[] = s.__importLyrics.sort((x:any,y:any)=>x.line - y.line).map((x:any)=>({ id: uid(), kor: x.kor, zh: x.zh }));
+                s.lyrics = trimLyricsTail(withId);
                 delete s.__importLyrics;
               }
               if (s.__importVocab) {
-                (s as Song).vocab = s.__importVocab.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
+                s.vocab = s.__importVocab.map((x:any)=>({ id: uid(), word: x.word, zh: x.zh }));
                 delete s.__importVocab;
               }
               if (s.__importGrammar) {
-                (s as Song).grammar = s.__importGrammar.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
+                s.grammar = s.__importGrammar.map((x:any)=>({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
                 delete s.__importGrammar;
               }
             }
           }
 
-          alert(`已匯入（單一檔）：成功 ${ok}，略過 ${skip}`);
+          alert(`已匯入整包：成功 ${ok}，略過 ${skip}`);
           return { ...d, albums };
         });
-
       } catch (e) {
         console.error(e);
         alert("TXT/CSV/TSV 解析或匯入失敗");
@@ -956,10 +1003,10 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }
 
-  // 匯出/匯入選單（單一檔為主；保留分檔匯出）
-  const IOMenu = (
+  // 匯出/匯入選單
+  const CSVMenu = (
     <>
-      <div className="px-3 py-1 text-xs text-zinc-500">整包（單一檔）</div>
+      <div className="px-3 py-1 text-xs text-zinc-500">整包（單一 TXT / TSV）</div>
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAllTXT}>匯出全部（all-in-one.txt）</button>
       <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
         匯入全部（TXT/TSV/CSV）
@@ -977,8 +1024,8 @@ export default function App() {
       <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarTXTAll}>文法</button>
 
       <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
-        單一檔表頭（至少要有 <b>albumTitle, songTitle</b>）：<br/>
-        albumTitle, songTitle, albumReleaseDate, cover, songReleaseDate, lyricist, composer, line, kor, zh, word, pattern, explain, example
+        單一檔表頭（至少要有 <b>albumTitle, songTitle</b>）：
+        <br/>albumTitle, songTitle, albumReleaseDate, cover, songReleaseDate, lyricist, composer, line, kor, zh, word, pattern, explain, example
       </div>
     </>
   );
@@ -1005,7 +1052,7 @@ export default function App() {
             <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">DAY6 歌詞學韓文</div>
             <div className="relative ml-auto flex flex-nowrap items-center gap-2">
               <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72" />
-              <DropMenu label="匯入 / 匯出" items={IOMenu} />
+              <DropMenu label="匯入 / 匯出" items={CSVMenu} />
               <DropMenu label="新增" items={NewMenu} />
             </div>
           </div>
@@ -1084,9 +1131,6 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
     return { album, song };
   }, [data, selected]);
 
-  const [infoEdit, setInfoEdit] = useState(false);
-  useEffect(()=>{ setInfoEdit(false); }, [current?.song.id]);
-
   return (
     <div className="min-w-0 flex-1">
       {current ? (
@@ -1097,26 +1141,18 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
                 title={current.song.title}
                 onSave={(nextTitle)=>{ updateSong(current.song.id, { title: nextTitle }); }}
               />
-              {!infoEdit ? (
-                <div className="mt-1 text-xs text-zinc-600">
-                  <div className="truncate">作詞：{current.song.lyricist || <span className="text-zinc-400">（未填）</span>}</div>
-                  <div className="truncate">作曲：{current.song.composer || <span className="text-zinc-400">（未填）</span>}</div>
-                  <div className="truncate">發佈日：{current.song.releaseDate || current.album.releaseDate}</div>
-                </div>
-              ) : (
-                <div className="mt-2 grid grid-cols-12 gap-2">
-                  <input defaultValue={current.song.lyricist||""} onChange={(e)=>updateSong(current.song.id,{ lyricist: e.target.value })} placeholder="作詞" className="col-span-12 md:col-span-4 rounded-lg border px-2 py-1 text-sm"/>
-                  <input defaultValue={current.song.composer||""} onChange={(e)=>updateSong(current.song.id,{ composer: e.target.value })} placeholder="作曲" className="col-span-12 md:col-span-4 rounded-lg border px-2 py-1 text-sm"/>
-                  <input type="date" defaultValue={current.song.releaseDate||""} onChange={(e)=>updateSong(current.song.id,{ releaseDate: e.target.value })} placeholder="發佈日（可空）" className="col-span-12 md:col-span-4 rounded-lg border px-2 py-1 text-sm"/>
-                </div>
-              )}
+              <div className="text-xs text-zinc-500 truncate">
+                {current.album.title} • {current.song.releaseDate || current.album.releaseDate}
+              </div>
+              <div className="mt-1 text-xs text-zinc-600 truncate">
+                {`作詞：${current.song.lyricist || '（未填）'}　作曲：${current.song.composer || '（未填）'}`}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-2">
               <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>歌詞</TabButton>
               <TabButton active={tab==='vocab'}  onClick={()=>setTab('vocab')}>單字表</TabButton>
               <TabButton active={tab==='flash'}  onClick={()=>setTab('flash')}>單字卡</TabButton>
               <TabButton active={tab==='grammar'} onClick={()=>setTab('grammar')}>文法</TabButton>
-              <ToolbarButton onClick={()=>setInfoEdit(v=>!v)}>{infoEdit?'完成資訊':'編輯資訊'}</ToolbarButton>
             </div>
           </div>
 
@@ -1179,7 +1215,7 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
 
 function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: {
   open: boolean; onClose: () => void;
-  onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string; lyricist?: string; composer?: string }) => void;
+  onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; lyricist?: string; composer?: string; kor: string; zh: string }) => void;
   albums: Album[]; defaultAlbumId?: string
 }) {
   const [albumId, setAlbumId] = useState<string>(defaultAlbumId || albums[0]?.id || "");
@@ -1226,60 +1262,16 @@ function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: {
 
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
-            <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句；可空）</div>
+            <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句）</div>
             <textarea value={kor} onChange={e=>setKor(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2"/>
           </div>
           <div className="col-span-12 md:col-span-6">
-            <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句；可空）</div>
+            <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句）</div>
             <textarea value={zh} onChange={e=>setZh(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2"/>
           </div>
         </div>
-
         <div className="flex justify-end gap-2"><ToolbarButton onClick={onClose}>取消</ToolbarButton><ToolbarButton type="submit">新增</ToolbarButton></div>
       </form>
     </Modal>
-  );
-}
-
-/* ====== FlashcardPanel（放最後以便使用到 tokenizeKorean） ====== */
-function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
-  const vocab = song.vocab;
-  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
-  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
-  const [reveal, setReveal] = useState(false);
-  useEffect(()=>{ setQueue(vocab.map((_,i)=>i)); setMeta(vocab.map(()=>({firstSeen:false}))); setReveal(false); }, [vocab.map(v=>v.id).join(',')]);
-  const total = vocab.length; const currentIdx = queue[0] ?? null; const current = currentIdx != null ? vocab[currentIdx] : null; const firstSeenCount = meta.filter(m => m.firstSeen).length;
-  function grade(level: 'again' | 'good' | 'easy') {
-    if (currentIdx == null) return;
-    setMeta(m => { const next = [...m]; if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true; return next; });
-    setQueue(q => { const rest = q.slice(1); if (level === 'again') { const insertAt = Math.min(2, rest.length); return [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)]; } if (level === 'good') return [...rest, currentIdx]; return rest; });
-  }
-  if (total === 0) return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-sm">尚無單字</div>
-      <ToolbarButton onClick={()=>{
-        const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
-        onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
-      }}>從歌詞自動擷取</ToolbarButton>
-    </div>
-  );
-  if (current == null) return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-sm">本輪完成！</div>
-      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
-    </div>
-  );
-  return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
-      <div className="text-2xl font-bold">{current.word}</div>
-      <div className="mt-2 text-lg text-zinc-700">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
-      <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
-      <div className="mt-3 flex flex-wrap justify-center gap-2">
-        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">不熟</button>
-        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">一般</button>
-        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">很熟</button>
-      </div>
-    </div>
   );
 }
