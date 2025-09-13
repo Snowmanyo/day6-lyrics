@@ -5,7 +5,16 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 type LyricLine = { id: string; kor: string; zh: string };
 type VocabItem = { id: string; word: string; zh?: string };
 type GrammarPoint = { id: string; pattern: string; explain?: string; example?: string };
-type Song = { id: string; title: string; releaseDate?: string; lyrics: LyricLine[]; vocab: VocabItem[]; grammar: GrammarPoint[] };
+type Song = {
+  id: string;
+  title: string;
+  releaseDate?: string;
+  lyricist?: string;   // 作詞
+  composer?: string;   // 作曲
+  lyrics: LyricLine[];
+  vocab: VocabItem[];
+  grammar: GrammarPoint[];
+};
 type Album = { id: string; title: string; releaseDate: string; cover?: string; songs: Song[] };
 type AppData = { artist: string; albums: Album[]; updatedAt: string; version: string };
 
@@ -14,9 +23,9 @@ const HAMBURGER = "\u2630"; // ☰
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const today = () => new Date().toISOString().slice(0, 10);
 
-function download(filename: string, text: string) {
-  const BOM = "\uFEFF"; // 讓 Excel 正確以 UTF-8 開啟
-  const blob = new Blob([BOM, text], { type: "text/plain;charset=utf-8" });
+function download(filename: string, text: string, mime = "text/plain") {
+  const BOM = "\uFEFF"; // 讓 Excel / 記事本正確以 UTF-8 開啟
+  const blob = new Blob([BOM, text], { type: `${mime};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
@@ -42,12 +51,13 @@ function tokenizeKorean(text: string) {
     .filter(Boolean)
     .filter(isHangul);
 }
-
 function toTSV(rows: (string | number | null | undefined)[][]) {
   return rows.map(r => r.map(c => String(c ?? "")).join("\t")).join("\n");
 }
-/** 簡易 CSV 解析器（支援引號轉義） */
 function parseCSV(text: string): string[][] {
+  // 支援 CSV/TSV（若是 \t，先轉 , 再解析），也容忍簡單引號
+  const first = (text.split(/\r?\n/, 1)[0] || "");
+  if (!first.includes(",") && first.includes("\t")) text = text.replace(/\t/g, ",");
   const rows: string[][] = [];
   let i = 0, field = "", row: string[] = [], inQuotes = false;
   while (i < text.length) {
@@ -56,7 +66,8 @@ function parseCSV(text: string): string[][] {
       if (ch === '"') {
         if (i + 1 < text.length && text[i + 1] === '"') { field += '"'; i += 2; continue; }
         inQuotes = false; i++; continue;
-      } else { field += ch; i++; continue; }
+      }
+      field += ch; i++; continue;
     } else {
       if (ch === '"') { inQuotes = true; i++; continue; }
       if (ch === ",") { row.push(field); field = ""; i++; continue; }
@@ -71,11 +82,6 @@ function parseCSV(text: string): string[][] {
   while (rows.length && rows[rows.length - 1].every(c => c === "")) rows.pop();
   return rows;
 }
-function fileToDataURL(file: File): Promise<string> {
-  return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
-}
-
-/* ===== 匯入工具（只用專輯+歌名；寬鬆表頭、支援 TSV/UTF-16） ===== */
 const BOM = "\uFEFF";
 const stripCell = (s: string) => (s || "").replace(BOM, "").trim();
 const normalizeHeader = (s: string) =>
@@ -90,11 +96,14 @@ function idxOfAny(H: string[], aliases: string[]) {
   for (const a of aliases) { const i = H.findIndex(h => h.includes(a)); if (i >= 0) return i; }
   return -1;
 }
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
+}
 
 /* ===================== Seed ===================== */
 const SEED: AppData = {
   artist: "DAY6",
-  version: "3.1.0",
+  version: "3.2.0",
   updatedAt: new Date().toISOString(),
   albums: [
     {
@@ -103,8 +112,8 @@ const SEED: AppData = {
       releaseDate: "2015-09-07",
       cover: "",
       songs: [
-        { id: uid(), title: "Congratulations", releaseDate: "2015-09-07", lyrics: [], vocab: [], grammar: [] },
-        { id: uid(), title: "Freely", releaseDate: "2015-09-07", lyrics: [], vocab: [], grammar: [] },
+        { id: uid(), title: "Congratulations", releaseDate: "2015-09-07", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] },
+        { id: uid(), title: "Freely", releaseDate: "2015-09-07", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] },
       ],
     },
   ],
@@ -132,7 +141,7 @@ function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
     <div ref={ref} className="relative">
       <ToolbarButton onClick={() => setOpen(o => !o)}>{label}</ToolbarButton>
       {open && (
-        <div className="absolute right-0 z-[9999] mt-1 w-64 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
+        <div className="absolute right-0 z-[9999] mt-1 w-72 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
           {items}
         </div>
       )}
@@ -189,7 +198,7 @@ function DesktopSidebar({
   onToggleCollapse: (albumId: string)=>void;
 }) {
   return (
-    <aside className="w-[317px] shrink-0 overflow-y-auto border-r p-3 hidden md:block">
+    <aside className="hidden w-[317px] shrink-0 overflow-y-auto border-r p-3 md:block">
       <div className="w-[284px]">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-semibold">專輯 / 歌曲</div>
@@ -516,14 +525,14 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
           ) : (
             <ToolbarButton onClick={()=>setEdit(true)}>編輯</ToolbarButton>
           )}
-          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-lg border px-2 py-1 text-sm w-[140px] md:w-[180px]"/>
+          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="w-[140px] rounded-lg border px-2 py-1 text-sm outline-none md:w-[180px]"/>
         </div>
       </div>
 
       <div className="mb-3 grid grid-cols-12 gap-2">
         <input value={newWord} onChange={e=>setNewWord(e.target.value)} placeholder="韓文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
         <input value={newZh} onChange={e=>setNewZh(e.target.value)} placeholder="中文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
-        <ToolbarButton onClick={addFromInputs} className="col-span-12 md:col-span-2 text-center">+ 新增</ToolbarButton>
+        <ToolbarButton onClick={addFromInputs} className="col-span-12 text-center md:col-span-2">+ 新增</ToolbarButton>
       </div>
 
       <div className="overflow-auto rounded-xl border">
@@ -532,7 +541,7 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
             <tr className="border-b text-left">
               <th className="w-1/2 px-3 py-2">韓文</th>
               <th className="w-1/2 px-3 py-2">中文</th>
-              <th className="px-3 py-2 text-right whitespace-nowrap">操作</th>
+              <th className="whitespace-nowrap px-3 py-2 text-right">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -544,7 +553,7 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
                 <td className="px-3 py-2">
                   {edit ? <input value={v.zh||""} onChange={e=>up(v.id,{zh:e.target.value})} className="w-full bg-transparent outline-none"/> : <span>{v.zh}</span>}
                 </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
+                <td className="whitespace-nowrap px-3 py-2 text-right">
                   {edit ? <button onClick={()=>del(v.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">刪除</button> : <span className="text-xs text-zinc-400">—</span>}
                 </td>
               </tr>
@@ -613,56 +622,13 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
   );
 }
 
-function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
-  const vocab = song.vocab;
-  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
-  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
-  const [reveal, setReveal] = useState(false);
-  useEffect(()=>{ setQueue(vocab.map((_,i)=>i)); setMeta(vocab.map(()=>({firstSeen:false}))); setReveal(false); }, [vocab.map(v=>v.id).join(',')]);
-  const total = vocab.length; const currentIdx = queue[0] ?? null; const current = currentIdx != null ? vocab[currentIdx] : null; const firstSeenCount = meta.filter(m => m.firstSeen).length;
-  function grade(level: 'again' | 'good' | 'easy') {
-    if (currentIdx == null) return;
-    setMeta(m => { const next = [...m]; if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true; return next; });
-    setQueue(q => { const rest = q.slice(1); if (level === 'again') { const insertAt = Math.min(2, rest.length); return [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)]; } if (level === 'good') return [...rest, currentIdx]; return rest; });
-  }
-  if (total === 0) return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-sm">尚無單字</div>
-      <ToolbarButton onClick={()=>{
-        const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
-        onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
-      }}>從歌詞自動擷取</ToolbarButton>
-    </div>
-  );
-  if (current == null) return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-sm">本輪完成！</div>
-      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
-    </div>
-  );
-  return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
-      <div className="text-2xl font-bold">{current.word}</div>
-      <div className="mt-2 text-lg text-zinc-700">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
-      <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
-      <div className="mt-3 flex flex-wrap justify-center gap-2">
-        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">不熟</button>
-        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">一般</button>
-        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">很熟</button>
-      </div>
-    </div>
-  );
-}
-
-/* Inline title editor（歌曲標題✎） */
 function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: string)=>void }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(title);
   useEffect(()=>{ setVal(title); }, [title]);
   if (!editing) {
     return (
-      <div className="text-2xl font-bold flex items-center gap-2">
+      <div className="flex items-center gap-2 text-2xl font-bold">
         <span className="truncate">{title}</span>
         <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>setEditing(true)} title="編輯歌名">✎</button>
       </div>
@@ -670,7 +636,7 @@ function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: strin
   }
   return (
     <div className="flex items-center gap-2">
-      <input value={val} onChange={e=>setVal(e.target.value)} className="text-2xl font-bold rounded-md border px-2 py-1" autoFocus />
+      <input value={val} onChange={e=>setVal(e.target.value)} className="rounded-md border px-2 py-1 text-2xl font-bold" autoFocus />
       <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ onSave(val.trim() || title); setEditing(false); }}>儲存</button>
       <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ setVal(title); setEditing(false); }}>取消</button>
     </div>
@@ -686,7 +652,6 @@ export default function App() {
   });
   useEffect(() => { try { localStorage.setItem('day6_lyrics_app_data_v3', JSON.stringify({ ...data, updatedAt: new Date().toISOString() })); } catch {} }, [data]);
 
-  // 專輯收合狀態（持久化）
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try { const raw = localStorage.getItem('lyrics_album_collapsed'); if (raw) return JSON.parse(raw); } catch {}
     return {};
@@ -766,10 +731,10 @@ export default function App() {
     const album: Album = { id: uid(), title: title.trim() || "(未命名)", releaseDate: releaseDate || today(), cover: cover || "", songs: [] };
     setData(d => ({ ...d, albums: [...d.albums, album] }));
   }
-  function addSongImpl(payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) {
-    const { albumId, title, releaseDate = '' , kor, zh } = payload;
+  function addSongImpl(payload: { albumId: string; title: string; releaseDate?: string; lyricist?: string; composer?: string; kor: string; zh: string }) {
+    const { albumId, title, releaseDate = '' , lyricist = '', composer = '', kor, zh } = payload;
     const lyrics: LyricLine[] = alignLyrics(kor, zh).map(l => ({ id: uid(), kor: l.kor, zh: l.zh }));
-    const song: Song = { id: uid(), title: title.trim() || "(未命名)", releaseDate, lyrics, vocab: [], grammar: [] };
+    const song: Song = { id: uid(), title: title.trim() || "(未命名)", releaseDate, lyricist, composer, lyrics, vocab: [], grammar: [] };
     setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, songs: [...a.songs, song] } : a) }));
     setSelected({ albumId, songId: song.id });
   }
@@ -777,52 +742,37 @@ export default function App() {
     setData(d => ({ ...d, albums: d.albums.map(a => ({ ...a, songs: a.songs.map(s => s.id===songId ? { ...s, ...patch } : s) })) }));
   }
 
-  /* ===== 匯出（改用 TXT/TSV；只用 專輯+歌名） ===== */
-  function exportAlbumsTXT() {
-    const rows: (string|number)[][] = [["albumTitle","releaseDate","cover"]];
-    for (const a of data.albums) rows.push([a.title, a.releaseDate, a.cover||""]);
-    download(`albums.txt`, toTSV(rows));
+  /* ===== 合併匯出：一份 TXT（TSV）就好 ===== */
+  function exportUnifiedTXT() {
+    const rows: (string|number)[][] = [
+      ["albumTitle","songTitle","songReleaseDate","lyricist","composer","type","line","kor","zh","word","pattern","explain","example"]
+    ];
+    for (const a of data.albums) {
+      for (const s of a.songs) {
+        // 一列 meta（type=info）
+        rows.push([a.title, s.title, s.releaseDate||"", s.lyricist||"", s.composer||"", "info", "", "", "", "", "", "", ""]);
+        // 歌詞（type=lyrics）
+        s.lyrics.forEach((l, idx)=> rows.push([a.title, s.title, "", "", "", "lyrics", idx+1, l.kor, l.zh, "", "", "", ""]));
+        // 單字（type=vocab）
+        s.vocab.forEach(v => rows.push([a.title, s.title, "", "", "", "vocab", "", "", "", v.word, "", "", v.zh||""]));
+        // 文法（type=grammar）
+        s.grammar.forEach(g => rows.push([a.title, s.title, "", "", "", "grammar", "", "", "", "", g.pattern, g.explain||"", g.example||""]));
+      }
+    }
+    download(`all.txt`, toTSV(rows));
   }
-  function exportSongsTXT() {
-    const rows: (string|number)[][] = [["albumTitle","songTitle","releaseDate"]];
-    for (const a of data.albums) for (const s of a.songs) rows.push([a.title, s.title, s.releaseDate||""]);
-    download(`songs.txt`, toTSV(rows));
-  }
-  function exportLyricsTXTAll() {
-    const rows: (string|number)[][] = [["albumTitle","songTitle","line","kor","zh"]];
-    for (const a of data.albums) for (const s of a.songs) s.lyrics.forEach((l,idx)=> rows.push([a.title, s.title, idx+1, l.kor, l.zh]));
-    download(`lyrics.txt`, toTSV(rows));
-  }
-  function exportVocabTXTAll() {
-    const rows: (string|number)[][] = [["albumTitle","songTitle","word","zh"]];
-    for (const a of data.albums) for (const s of a.songs) for (const v of s.vocab) rows.push([a.title, s.title, v.word, v.zh||""]);
-    download(`vocab.txt`, toTSV(rows));
-  }
-  function exportGrammarTXTAll() {
-    const rows: (string|number)[][] = [["albumTitle","songTitle","pattern","explain","example"]];
-    for (const a of data.albums) for (const s of a.songs) for (const g of s.grammar) rows.push([a.title, s.title, g.pattern, g.explain||"", g.example||""]);
-    download(`grammar.txt`, toTSV(rows));
-  }
-  // 範本（只含表頭）
-  function downloadTemplate(kind: "albums"|"songs"|"lyrics"|"vocab"|"grammar") {
-    const header: Record<string,string[]> = {
-      albums:  ["albumTitle","releaseDate(YYYY-MM-DD)","cover(optional dataURL or URL)"],
-      songs:   ["albumTitle","songTitle","releaseDate(optional)"],
-      lyrics:  ["albumTitle","songTitle","line(1-based optional)","kor","zh"],
-      vocab:   ["albumTitle","songTitle","word","zh(optional)"],
-      grammar: ["albumTitle","songTitle","pattern","explain(optional)","example(optional)"],
-    };
-    download(`${kind}-template.txt`, toTSV([header[kind]]));
+  function downloadUnifiedTemplate() {
+    const header = [["albumTitle","songTitle","songReleaseDate(optional)","lyricist(optional)","composer(optional)","type(optional: info|lyrics|vocab|grammar)","line(optional)","kor(optional)","zh(optional)","word(optional)","pattern(optional)","explain(optional)","example(optional)"]];
+    download(`all-template.txt`, toTSV(header));
   }
 
-  /* ===== 匯入（支援 TXT/TSV/CSV；UTF-8/UTF-16 自動偵測；只用 專輯+歌名） ===== */
-  function importCSV(file: File) {
+  /* ===== 合併匯入（TXT/TSV/CSV；UTF-8/UTF-16 自動；只需 專輯+歌名） ===== */
+  function importUnified(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const buf = reader.result as ArrayBuffer;
         const bytes = new Uint8Array(buf);
-        // 判斷 BOM
         let encoding: "utf-8"|"utf-16le"|"utf-16be" = 'utf-8';
         if (bytes.length >= 2) {
           if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
@@ -830,243 +780,123 @@ export default function App() {
         }
         let text = new TextDecoder(encoding).decode(bytes);
 
-        // 若是 TSV（第一行無逗號但有 tab），轉成逗號解析
-        const firstLine = text.split(/\r?\n/, 1)[0] || "";
-        const isTSV = (!firstLine.includes(",") && firstLine.includes("\t"));
-        if (isTSV) text = text.replace(/\t/g, ",");
-
         const rows = parseCSV(text);
         if (!rows.length) { alert("找不到資料列"); return; }
 
-        // 標頭正規化
         const rawHeader = rows[0].map(c => stripCell(c));
         const H = rawHeader.map(normalizeHeader);
 
-        // 欄位（中英皆可）
         const col = {
           albumTitle:   idxOfAny(H, ["albumtitle","album","專輯","專輯名稱","專輯名"]),
           songTitle:    idxOfAny(H, ["songtitle","song","title","歌曲","歌名"]),
-          releaseDate:  idxOfAny(H, ["releasedate","date","發佈日","發佈日期","發布日","發布日期"]),
-          cover:        idxOfAny(H, ["cover","封面","圖片","封面圖"]),
-          line:         idxOfAny(H, ["line","行","行號","序"]),
-          kor:          idxOfAny(H, ["kor","korean","kr","han","韓文"]),
-          zh:           idxOfAny(H, ["zh","chinese","cn","中文","翻譯","釋義"]),
-          word:         idxOfAny(H, ["word","koreanword","單字","詞"]),
+          songDate:     idxOfAny(H, ["songreleasedate","releasedate","date","歌曲發佈日","歌曲日期","發佈日","發布日"]),
+          lyricist:     idxOfAny(H, ["lyricist","作詞"]),
+          composer:     idxOfAny(H, ["composer","作曲"]),
+          type:         idxOfAny(H, ["type","類型"]),
+          line:         idxOfAny(H, ["line","行","序"]),
+          kor:          idxOfAny(H, ["kor","korean","kr","韓文"]),
+          zh:           idxOfAny(H, ["zh","chinese","cn","中文","翻譯"]),
+          word:         idxOfAny(H, ["word","單字","詞"]),
           pattern:      idxOfAny(H, ["pattern","文法","語法"]),
           explain:      idxOfAny(H, ["explain","說明"]),
-          example:      idxOfAny(H, ["example","例句"]),
+          example:      idxOfAny(H, ["example","例句"])
         };
 
-        const has = (i: number) => i >= 0;
-        const kindAlbums  = has(col.albumTitle) && !has(col.songTitle) && !has(col.word) && !has(col.pattern);
-        const kindSongs   = has(col.albumTitle) && has(col.songTitle) && !has(col.kor) && !has(col.word) && !has(col.pattern);
-        const kindLyrics  = has(col.albumTitle) && has(col.songTitle) && has(col.kor) && has(col.zh);
-        const kindVocab   = has(col.albumTitle) && has(col.songTitle) && has(col.word);
-        const kindGrammar = has(col.albumTitle) && has(col.songTitle) && has(col.pattern);
-
-        if (!(kindAlbums || kindSongs || kindLyrics || kindVocab || kindGrammar)) {
-          alert(
-            "無法辨識的表頭。\n" +
-            "可接受的表頭範例：\n" +
-            "• 專輯：albumTitle, releaseDate, cover\n" +
-            "• 歌曲：albumTitle, songTitle, releaseDate\n" +
-            "• 歌詞：albumTitle, songTitle, [line], kor, zh\n" +
-            "• 單字：albumTitle, songTitle, word, [zh]\n" +
-            "• 文法：albumTitle, songTitle, pattern, [explain], [example]"
-          );
+        if (col.albumTitle < 0 || col.songTitle < 0) {
+          alert("必須包含表頭：albumTitle, songTitle");
           return;
         }
 
-        const body = rows.slice(1);
+        // 先拷貝 data 作業
+        setData(d => {
+          const next: AppData = { ...d, albums: d.albums.map(a => ({ ...a, songs: [...a.songs] })) };
 
-        // ====== 專輯 ======
-        if (kindAlbums) {
-          const iTitle = col.albumTitle;
-          setData(d => {
-            const byTitle: Record<string, Album> = {};
-            d.albums.forEach(a => { byTitle[a.title.toLowerCase()] = { ...a, songs: [...a.songs] }; });
+          // 快速索引
+          const albumIdx = (title: string) => next.albums.findIndex(a => a.title.toLowerCase() === title.toLowerCase());
+          const songIdx = (ai: number, title: string) => next.albums[ai].songs.findIndex(s => s.title.toLowerCase() === title.toLowerCase());
 
-            const ordered: Album[] = [];
-            for (const r of body) {
-              const title = stripCell(r[iTitle] || "");
-              if (!title) continue;
-              const key = title.toLowerCase();
-              const date = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
-              const cov  = has(col.cover) ? stripCell(r[col.cover]) : "";
+          // 暫存：歌詞/單字/文法分別累積，最後一次性覆蓋
+          type LRow = { line:number; kor:string; zh:string };
+          type VRow = { word:string; zh:string };
+          type GRow = { pattern:string; explain:string; example:string };
+          const L: Record<string, LRow[]> = {};
+          const V: Record<string, VRow[]> = {};
+          const G: Record<string, GRow[]> = {};
 
-              const prev = byTitle[key];
-              const item: Album = prev
-                ? { ...prev, title: title, releaseDate: date || prev.releaseDate, cover: cov || prev.cover }
-                : { id: uid(), title, releaseDate: date || today(), cover: cov, songs: [] };
+          let ok = 0, skip = 0, rowNo = 0;
 
-              byTitle[key] = item;
-              ordered.push(item);
+          for (const r of rows.slice(1)) {
+            rowNo++;
+            const aTitle = stripCell(r[col.albumTitle]||"");
+            const sTitle = stripCell(r[col.songTitle ]||"");
+            if (!aTitle || !sTitle) { skip++; continue; }
+
+            // 1) 取得/建立專輯與歌曲
+            let ai = albumIdx(aTitle);
+            if (ai < 0) { next.albums.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] }); ai = next.albums.length - 1; }
+            let si = songIdx(ai, sTitle);
+            if (si < 0) { next.albums[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] }); si = next.albums[ai].songs.length - 1; }
+            const s = next.albums[ai].songs[si];
+
+            // 2) metadata（若有填就覆蓋）
+            const date = col.songDate >=0 ? stripCell(r[col.songDate]) : "";
+            const lyr  = col.lyricist>=0 ? stripCell(r[col.lyricist]) : "";
+            const comp = col.composer>=0 ? stripCell(r[col.composer]) : "";
+            if (date) s.releaseDate = date;
+            if (lyr)  s.lyricist = lyr;
+            if (comp) s.composer = comp;
+
+            // 3) 決定 row 類型：若有 word → vocab；若有 pattern → grammar；若有 kor/zh → lyrics；若 type=info 則只更新 meta
+            const type = col.type>=0 ? stripCell(r[col.type]).toLowerCase() : "";
+            const hasWord = col.word>=0 && stripCell(r[col.word]) !== "";
+            const hasPattern = col.pattern>=0 && stripCell(r[col.pattern]) !== "";
+            const hasKorZh = (col.kor>=0 && stripCell(r[col.kor])!=="") || (col.zh>=0 && stripCell(r[col.zh])!=="");
+
+            const key = `${ai}:${si}`;
+
+            if (type === "vocab" || hasWord) {
+              const word = stripCell(r[col.word]||"");
+              const zh = col.zh>=0 ? stripCell(r[col.zh]) : "";
+              (V[key] ||= []).push({ word, zh });
+              ok++; continue;
             }
-            // 未出現在檔案的舊專輯排後面
-            const rest = d.albums.filter(a => !ordered.find(x => x.id === a.id));
-            alert(`已匯入專輯（含排序）：${ordered.length} 筆`);
-            return { ...d, albums: [...ordered, ...rest] };
-          });
-          return;
-        }
-
-        // ====== 歌曲 ======
-        if (kindSongs) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle;
-          setData(d => {
-            let ok = 0, skip = 0;
-            const albums = [...d.albums];
-            for (const r of body) {
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              if (!aTitle || !sTitle) { skip++; continue; }
-              const date   = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
-
-              let ai = albums.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { // 自動建立專輯
-                albums.push({ id: uid(), title: aTitle, releaseDate: date || today(), cover: "", songs: [] });
-                ai = albums.length - 1;
-              }
-              const exists = albums[ai].songs.find(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (exists) {
-                exists.title = sTitle; if (date) exists.releaseDate = date;
-              } else {
-                albums[ai].songs.push({ id: uid(), title: sTitle, releaseDate: date, lyrics: [], vocab: [], grammar: [] });
-              }
-              ok++;
+            if (type === "grammar" || hasPattern) {
+              const pattern = stripCell(r[col.pattern]||"");
+              const explain = col.explain>=0 ? stripCell(r[col.explain]) : "";
+              const example = col.example>=0 ? stripCell(r[col.example]) : "";
+              (G[key] ||= []).push({ pattern, explain, example });
+              ok++; continue;
             }
-            alert(`已匯入歌曲：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums };
-          });
-          return;
-        }
-
-        // ====== 歌詞 ======
-        if (kindLyrics) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle;
-          setData(d => {
-            let ok = 0, skip = 0, rowNo = 0;
-            const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-
-            for (const r of body) {
-              rowNo++;
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              if (!aTitle || !sTitle) { skip++; continue; }
-
-              let ai = next.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { // 自動建立專輯
-                next.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] });
-                ai = next.length - 1;
-              }
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (si < 0) { // 自動建立歌曲
-                next[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyrics: [], vocab: [], grammar: [] });
-                si = next[ai].songs.length - 1;
-              }
-
-              const line = has(col.line) ? Number(stripCell(r[col.line])) || rowNo : rowNo;
-              const kor  = has(col.kor) ? stripCell(r[col.kor]) : "";
-              const zh   = has(col.zh)  ? stripCell(r[col.zh])  : "";
-
-              const s = next[ai].songs[si] as Song & { __importLyrics?: { line:number; kor:string; zh:string }[] };
-              (s.__importLyrics ||= []).push({ line, kor, zh });
-              ok++;
+            if (type === "lyrics" || hasKorZh) {
+              const line = col.line>=0 ? Number(stripCell(r[col.line])) || rowNo : rowNo;
+              const kor  = col.kor>=0 ? stripCell(r[col.kor]) : "";
+              const zh   = col.zh>=0 ? stripCell(r[col.zh])  : "";
+              (L[key] ||= []).push({ line, kor, zh });
+              ok++; continue;
             }
 
-            for (const a of next) for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & { __importLyrics?: { line:number; kor:string; zh:string }[] };
-              if (s.__importLyrics) {
-                const withId = s.__importLyrics.sort((x,y)=>x.line - y.line)
-                  .map(x => ({ id: uid(), kor: x.kor, zh: x.zh } as LyricLine));
-                (s as Song).lyrics = trimLyricsTail<LyricLine>(withId);
-                delete s.__importLyrics;
-              }
-            }
+            // type=info 或空列 → 視為只更新 meta
+            ok++;
+          }
 
-            alert(`已匯入歌詞：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums: next };
-          });
-          return;
-        }
+          // 4) 寫回暫存資料
+          for (const [k, arr] of Object.entries(L)) {
+            const [aiStr, siStr] = k.split(":"); const ai = Number(aiStr), si = Number(siStr);
+            const lines = arr.sort((a,b)=>a.line-b.line).map(x => ({ id: uid(), kor: x.kor, zh: x.zh }));
+            next.albums[ai].songs[si].lyrics = trimLyricsTail(lines);
+          }
+          for (const [k, arr] of Object.entries(V)) {
+            const [aiStr, siStr] = k.split(":"); const ai = Number(aiStr), si = Number(siStr);
+            next.albums[ai].songs[si].vocab = arr.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
+          }
+          for (const [k, arr] of Object.entries(G)) {
+            const [aiStr, siStr] = k.split(":"); const ai = Number(aiStr), si = Number(siStr);
+            next.albums[ai].songs[si].grammar = arr.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
+          }
 
-        // ====== 單字 ======
-        if (kindVocab) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle, iWord = col.word;
-          setData(d => {
-            let ok = 0, skip = 0;
-            const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-
-            for (const r of body) {
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              const word   = has(iWord) ? stripCell(r[iWord]) : "";
-              const zh     = has(col.zh) ? stripCell(r[col.zh]) : "";
-              if (!aTitle || !sTitle || !word) { skip++; continue; }
-
-              let ai = next.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { next.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] }); ai = next.length - 1; }
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (si < 0) { next[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyrics: [], vocab: [], grammar: [] }); si = next[ai].songs.length - 1; }
-
-              const s = next[ai].songs[si] as Song & { __importVocab?: { word:string; zh:string }[] };
-              (s.__importVocab ||= []).push({ word, zh });
-              ok++;
-            }
-
-            for (const a of next) for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & { __importVocab?: { word:string; zh:string }[] };
-              if (s.__importVocab) {
-                (s as Song).vocab = s.__importVocab.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
-                delete s.__importVocab;
-              }
-            }
-
-            alert(`已匯入單字：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums: next };
-          });
-          return;
-        }
-
-        // ====== 文法 ======
-        if (kindGrammar) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle, iPat = col.pattern;
-          setData(d => {
-            let ok = 0, skip = 0;
-            const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-
-            for (const r of body) {
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              const pattern = has(iPat) ? stripCell(r[iPat]) : "";
-              const explain = has(col.explain) ? stripCell(r[col.explain]) : "";
-              const example = has(col.example) ? stripCell(r[col.example]) : "";
-              if (!aTitle || !sTitle || !pattern) { skip++; continue; }
-
-              let ai = next.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { next.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] }); ai = next.length - 1; }
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (si < 0) { next[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyrics: [], vocab: [], grammar: [] }); si = next[ai].songs.length - 1; }
-
-              const s = next[ai].songs[si] as Song & { __importGrammar?: { pattern:string; explain:string; example:string }[] };
-              (s.__importGrammar ||= []).push({ pattern, explain, example });
-              ok++;
-            }
-
-            for (const a of next) for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & { __importGrammar?: { pattern:string; explain:string; example:string }[] };
-              if (s.__importGrammar) {
-                (s as Song).grammar = s.__importGrammar.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
-                delete s.__importGrammar;
-              }
-            }
-
-            alert(`已匯入文法：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums: next };
-          });
-          return;
-        }
-
+          alert(`合併匯入：處理 ${ok} 列（略過 ${skip} 列）`);
+          return next;
+        });
       } catch (e) {
         console.error(e);
         alert("TXT/CSV/TSV 解析或匯入失敗");
@@ -1075,32 +905,19 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }
 
-  // 匯出/匯入選單（TXT/TSV；用專輯+歌名）
-  const CSVMenu = (
+  // 匯出/匯入選單（合併檔）
+  const IOmenu = (
     <>
-      <div className="px-3 py-1 text-xs text-zinc-500">匯出（TXT / UTF-8 BOM, TSV）</div>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsTXT}>專輯（含排序）</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsTXT}>歌曲清單</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsTXTAll}>歌詞</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabTXTAll}>單字</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarTXTAll}>文法</button>
-      <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">下載範本（TXT / TSV）</div>
-      <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("albums")}>專輯</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("songs")}>歌曲</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("lyrics")}>歌詞</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("vocab")}>單字</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("grammar")}>文法</button>
-      </div>
-      <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">匯入（TXT/TSV/CSV）</div>
+      <div className="px-3 py-1 text-xs text-zinc-500">合併檔（TXT / UTF-8 BOM / TSV）</div>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportUnifiedTXT}>匯出全部（單一檔）</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={downloadUnifiedTemplate}>下載範本（單一檔）</button>
       <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
-        選擇檔案
-        <input type="file" className="hidden" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values,text/csv" onChange={e=>{ const f=e.target.files?.[0]; if (f) importCSV(f); }}/>
+        匯入（單一檔）
+        <input type="file" className="hidden" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values,text/csv" onChange={e=>{ const f=e.target.files?.[0]; if (f) importUnified(f); }}/>
       </label>
       <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
-        表頭：<b>albumTitle, songTitle</b>…（支援中文表頭：專輯／歌名／韓文／中文／文法／說明／例句）
+        必填：<b>albumTitle, songTitle</b>；其餘選填：songReleaseDate, lyricist, composer<br/>
+        若填 <b>kor/zh</b> → 新增歌詞（可搭配 line）；填 <b>word/zh</b> → 新增單字；填 <b>pattern/explain/example</b> → 新增文法。
       </div>
     </>
   );
@@ -1127,7 +944,7 @@ export default function App() {
             <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">DAY6 歌詞學韓文</div>
             <div className="relative ml-auto flex flex-nowrap items-center gap-2">
               <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72" />
-              <DropMenu label="匯入 / 匯出" items={CSVMenu} />
+              <DropMenu label="匯入 / 匯出" items={IOmenu} />
               <DropMenu label="新增" items={NewMenu} />
             </div>
           </div>
@@ -1211,12 +1028,17 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
       {current ? (
         <div className="flex min-h-[calc(100vh-200px)] flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
+            <div className="min-w-0">
               <SongTitleEditable
                 title={current.song.title}
                 onSave={(nextTitle)=>{ updateSong(current.song.id, { title: nextTitle }); }}
               />
               <div className="text-xs text-zinc-500">{current.album.title} • {current.song.releaseDate || current.album.releaseDate}</div>
+              {/* 作詞 / 作曲 */}
+              <div className="mt-1 text-sm text-zinc-700">
+                <span className="mr-4">作詞：{current.song.lyricist || <span className="text-zinc-400">（未填）</span>}</span>
+                <span>作曲：{current.song.composer || <span className="text-zinc-400">（未填）</span>}</span>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>歌詞</TabButton>
@@ -1283,18 +1105,20 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
   );
 }
 
-function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { open: boolean; onClose: () => void; onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; kor: string; zh: string }) => void; albums: Album[]; defaultAlbumId?: string }) {
+function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { open: boolean; onClose: () => void; onSubmit: (payload: { albumId: string; title: string; releaseDate?: string; lyricist?: string; composer?: string; kor: string; zh: string }) => void; albums: Album[]; defaultAlbumId?: string }) {
   const [albumId, setAlbumId] = useState<string>(defaultAlbumId || albums[0]?.id || "");
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
+  const [lyricist, setLyricist] = useState("");
+  const [composer, setComposer] = useState("");
   const [kor, setKor] = useState("");
   const [zh , setZh ] = useState("");
 
-  useEffect(()=>{ if (open) { setAlbumId(defaultAlbumId || albums[0]?.id || ""); setTitle(""); setDate(""); setKor(""); setZh(""); } }, [open, defaultAlbumId, albums.length]);
+  useEffect(()=>{ if (open) { setAlbumId(defaultAlbumId || albums[0]?.id || ""); setTitle(""); setDate(""); setLyricist(""); setComposer(""); setKor(""); setZh(""); } }, [open, defaultAlbumId, albums.length]);
 
   return (
     <Modal open={open} onClose={onClose} title="新增歌曲">
-      <form onSubmit={(e)=>{ e.preventDefault(); if (!albumId || !title.trim()) return; onSubmit({ albumId, title: title.trim(), releaseDate: date, kor, zh }); }} className="space-y-3">
+      <form onSubmit={(e)=>{ e.preventDefault(); if (!albumId || !title.trim()) return; onSubmit({ albumId, title: title.trim(), releaseDate: date, lyricist, composer, kor, zh }); }} className="space-y-3">
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">選擇專輯</div>
@@ -1313,6 +1137,16 @@ function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { ope
         </div>
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">作詞（可空）</div>
+            <input value={lyricist} onChange={e=>setLyricist(e.target.value)} className="w-full rounded-lg border px-3 py-2" placeholder="作詞者"/>
+          </div>
+          <div className="col-span-12 md:col-span-6">
+            <div className="mb-1 text-xs text-zinc-500">作曲（可空）</div>
+            <input value={composer} onChange={e=>setComposer(e.target.value)} className="w-full rounded-lg border px-3 py-2" placeholder="作曲者"/>
+          </div>
+        </div>
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句）</div>
             <textarea value={kor} onChange={e=>setKor(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2"/>
           </div>
@@ -1324,5 +1158,47 @@ function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: { ope
         <div className="flex justify-end gap-2"><ToolbarButton onClick={onClose}>取消</ToolbarButton><ToolbarButton type="submit">新增</ToolbarButton></div>
       </form>
     </Modal>
+  );
+}
+
+function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
+  const vocab = song.vocab;
+  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
+  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
+  const [reveal, setReveal] = useState(false);
+  useEffect(()=>{ setQueue(vocab.map((_,i)=>i)); setMeta(vocab.map(()=>({firstSeen:false}))); setReveal(false); }, [vocab.map(v=>v.id).join(',')]);
+  const total = vocab.length; const currentIdx = queue[0] ?? null; const current = currentIdx != null ? vocab[currentIdx] : null; const firstSeenCount = meta.filter(m => m.firstSeen).length;
+  function grade(level: 'again' | 'good' | 'easy') {
+    if (currentIdx == null) return;
+    setMeta(m => { const next = [...m]; if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true; return next; });
+    setQueue(q => { const rest = q.slice(1); if (level === 'again') { const insertAt = Math.min(2, rest.length); return [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)]; } if (level === 'good') return [...rest, currentIdx]; return rest; });
+  }
+  if (total === 0) return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center">
+      <div className="mb-2 text-sm">尚無單字</div>
+      <ToolbarButton onClick={()=>{
+        const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
+        onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
+      }}>從歌詞自動擷取</ToolbarButton>
+    </div>
+  );
+  if (current == null) return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center">
+      <div className="mb-2 text-sm">本輪完成！</div>
+      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
+    </div>
+  );
+  return (
+    <div className="rounded-2xl border bg-white/70 p-6 text-center">
+      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
+      <div className="text-2xl font-bold">{current.word}</div>
+      <div className="mt-2 text-lg text-zinc-700">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
+      <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">不熟</button>
+        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">一般</button>
+        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">很熟</button>
+      </div>
+    </div>
   );
 }
