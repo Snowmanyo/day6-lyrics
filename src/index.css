@@ -1,1 +1,11 @@
+/* src/index.css */
 @import "tailwindcss";
+
+/* 可選：你的品牌背景或字體微調，純裝飾，不影響邊框 */
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #fffaf2;
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, "Helvetica Neue";
+}
