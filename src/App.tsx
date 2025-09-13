@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /* ===================== Types ===================== */
@@ -14,13 +15,12 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const today = () => new Date().toISOString().slice(0, 10);
 
 function download(filename: string, text: string) {
-  const BOM = "\uFEFF"; // 加 UTF-8 BOM，Excel 會用 UTF-8 開檔
-  const blob = new Blob([BOM, text], { type: "text/csv;charset=utf-8" });
+  const BOM = "\uFEFF"; // 讓 Excel 正確以 UTF-8 開啟
+  const blob = new Blob([BOM, text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
 }
-
 function alignLyrics(korRaw: string, zhRaw: string) {
   const kor = (korRaw || "").split(/\r?\n/);
   const zh = (zhRaw || "").split(/\r?\n/);
@@ -52,6 +52,9 @@ function toCSV(rows: (string | number | null | undefined)[][]) {
     }).join(",")
   ).join("\n");
 }
+function toTSV(rows: (string | number | null | undefined)[][]) {
+  return rows.map(r => r.map(c => String(c ?? "")).join("\t")).join("\n");
+}
 /** 簡易 CSV 解析器（支援引號轉義） */
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
@@ -81,7 +84,7 @@ function fileToDataURL(file: File): Promise<string> {
   return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
 }
 
-/* ===== 匯入工具（只用專輯+歌名；寬鬆表頭、支援 TSV） ===== */
+/* ===== 匯入工具（只用專輯+歌名；寬鬆表頭、支援 TSV/UTF-16） ===== */
 const BOM = "\uFEFF";
 const stripCell = (s: string) => (s || "").replace(BOM, "").trim();
 const normalizeHeader = (s: string) =>
@@ -90,7 +93,6 @@ const normalizeHeader = (s: string) =>
     .toLowerCase()
     .replace(/optional|可選|選填/g, "")
     .replace(/[\s_\-（）()]/g, "");
-/** 找欄位：先 exact，次之 startsWith，次之 includes */
 function idxOfAny(H: string[], aliases: string[]) {
   for (const a of aliases) { const i = H.indexOf(a); if (i >= 0) return i; }
   for (const a of aliases) { const i = H.findIndex(h => h.startsWith(a)); if (i >= 0) return i; }
@@ -101,7 +103,7 @@ function idxOfAny(H: string[], aliases: string[]) {
 /* ===================== Seed ===================== */
 const SEED: AppData = {
   artist: "DAY6",
-  version: "3.0.0",
+  version: "3.1.0",
   updatedAt: new Date().toISOString(),
   albums: [
     {
@@ -178,6 +180,7 @@ function DesktopSidebar({
   editingAlbumId, onToggleAlbumEdit,
   onUpdateAlbum, onUploadAlbumCover,
   onReorderAlbum, onReorderSong, onDeleteSong,
+  onDeleteAlbum,
   collapsed, onToggleCollapse
 }: {
   data: AppData;
@@ -190,6 +193,7 @@ function DesktopSidebar({
   onReorderAlbum: (from: number, to: number) => void;
   onReorderSong: (albumId: string, from: number, to: number) => void;
   onDeleteSong: (albumId: string, songId: string) => void;
+  onDeleteAlbum: (albumId: string) => void;
   collapsed: Record<string, boolean>;
   onToggleCollapse: (albumId: string)=>void;
 }) {
@@ -299,6 +303,10 @@ function DesktopSidebar({
                         <input type="file" accept="image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if (f) onUploadAlbumCover(a.id, f); }} />
                       </label>
                       {a.cover && <button onClick={()=>onUpdateAlbum(a.id,{cover:""})} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">清除封面</button>}
+                      <button
+                        onClick={()=>{ if (confirm(`確定要刪除專輯「${a.title}」？此操作將刪除底下所有歌曲。`)) onDeleteAlbum(a.id); }}
+                        className="rounded-lg border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
+                      >刪除專輯</button>
                     </div>
                   </div>
                 )}
@@ -429,7 +437,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
   }
 
   return (
-    <div className="rounded-2xl border bg-white/70 p-4">
+    <div className="flex min-h-0 flex-1 flex-col rounded-2xl border bg-white/70 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">歌詞</div>
         <div className="flex items-center gap-2 text-sm">
@@ -468,9 +476,9 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
         </div>
       )}
 
-      <div className="mt-4">
+      <div className="mt-4 flex-1 overflow-auto">
         <div className="mb-2 text-sm font-medium">對照預覽</div>
-        <div className="max-h-[300px] overflow-auto rounded-xl border bg-white/60">
+        <div className="rounded-xl border bg-white/60">
           {aligned.map((l, i) => (
             <div key={i} className="grid grid-cols-12 gap-2 border-b px-3 py-2 last:border-none">
               <div className="col-span-12 md:col-span-6 whitespace-pre-wrap">{l.kor || <span className="text-zinc-400">(空)</span>}</div>
@@ -727,6 +735,11 @@ export default function App() {
     });
     if (selected?.albumId === albumId && selected?.songId === songId) setSelected(null);
   }
+  function deleteAlbum(albumId: string) {
+    setData(d => ({ ...d, albums: d.albums.filter(a => a.id !== albumId) }));
+    setSelected(sel => (sel?.albumId === albumId ? null : sel));
+    setEditingAlbumId(id => (id === albumId ? null : id));
+  }
 
   // album update
   function updateAlbum(albumId: string, patch: Partial<Album>) { setData(d => ({ ...d, albums: d.albums.map(a => a.id===albumId ? { ...a, ...patch } : a) })); }
@@ -773,31 +786,31 @@ export default function App() {
     setData(d => ({ ...d, albums: d.albums.map(a => ({ ...a, songs: a.songs.map(s => s.id===songId ? { ...s, ...patch } : s) })) }));
   }
 
-  /* ===== 匯出（只用 專輯+歌名） ===== */
-  function exportAlbumsCSV() {
+  /* ===== 匯出（改用 TXT/TSV；只用 專輯+歌名） ===== */
+  function exportAlbumsTXT() {
     const rows: (string|number)[][] = [["albumTitle","releaseDate","cover"]];
     for (const a of data.albums) rows.push([a.title, a.releaseDate, a.cover||""]);
-    download(`albums.csv`, toCSV(rows));
+    download(`albums.txt`, toTSV(rows));
   }
-  function exportSongsCSV() {
+  function exportSongsTXT() {
     const rows: (string|number)[][] = [["albumTitle","songTitle","releaseDate"]];
     for (const a of data.albums) for (const s of a.songs) rows.push([a.title, s.title, s.releaseDate||""]);
-    download(`songs.csv`, toCSV(rows));
+    download(`songs.txt`, toTSV(rows));
   }
-  function exportLyricsCSVAll() {
+  function exportLyricsTXTAll() {
     const rows: (string|number)[][] = [["albumTitle","songTitle","line","kor","zh"]];
     for (const a of data.albums) for (const s of a.songs) s.lyrics.forEach((l,idx)=> rows.push([a.title, s.title, idx+1, l.kor, l.zh]));
-    download(`lyrics.csv`, toCSV(rows));
+    download(`lyrics.txt`, toTSV(rows));
   }
-  function exportVocabCSVAll() {
+  function exportVocabTXTAll() {
     const rows: (string|number)[][] = [["albumTitle","songTitle","word","zh"]];
     for (const a of data.albums) for (const s of a.songs) for (const v of s.vocab) rows.push([a.title, s.title, v.word, v.zh||""]);
-    download(`vocab.csv`, toCSV(rows));
+    download(`vocab.txt`, toTSV(rows));
   }
-  function exportGrammarCSVAll() {
+  function exportGrammarTXTAll() {
     const rows: (string|number)[][] = [["albumTitle","songTitle","pattern","explain","example"]];
     for (const a of data.albums) for (const s of a.songs) for (const g of s.grammar) rows.push([a.title, s.title, g.pattern, g.explain||"", g.example||""]);
-    download(`grammar.csv`, toCSV(rows));
+    download(`grammar.txt`, toTSV(rows));
   }
   // 範本（只含表頭）
   function downloadTemplate(kind: "albums"|"songs"|"lyrics"|"vocab"|"grammar") {
@@ -808,34 +821,30 @@ export default function App() {
       vocab:   ["albumTitle","songTitle","word","zh(optional)"],
       grammar: ["albumTitle","songTitle","pattern","explain(optional)","example(optional)"],
     };
-    download(`${kind}-template.csv`, toCSV([header[kind]]));
+    download(`${kind}-template.txt`, toTSV([header[kind]]));
   }
 
-  /* ===== 匯入（支援 TSV；只用 專輯+歌名；必要時自動建立） ===== */
+  /* ===== 匯入（支援 TXT/TSV/CSV；UTF-8/UTF-16 自動偵測；只用 專輯+歌名） ===== */
   function importCSV(file: File) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      // 先以 ArrayBuffer 讀取，再依 BOM/內容判斷編碼
-      const buf = reader.result as ArrayBuffer;
-      const bytes = new Uint8Array(buf);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const buf = reader.result as ArrayBuffer;
+        const bytes = new Uint8Array(buf);
+        // 判斷 BOM
+        let encoding: "utf-8"|"utf-16le"|"utf-16be" = 'utf-8';
+        if (bytes.length >= 2) {
+          if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
+          else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
+        }
+        let text = new TextDecoder(encoding).decode(bytes);
 
-      // 判斷 BOM
-      let encoding: string = 'utf-8';
-      if (bytes.length >= 2) {
-        if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
-        else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
-      }
-      // decode
-      let text = new TextDecoder(encoding as any).decode(bytes);
+        // 若是 TSV（第一行無逗號但有 tab），轉成逗號解析
+        const firstLine = text.split(/\r?\n/, 1)[0] || "";
+        const isTSV = (!firstLine.includes(",") && firstLine.includes("\t"));
+        if (isTSV) text = text.replace(/\t/g, ",");
 
-      // TSV -> CSV（若第一行沒有逗號但有 tab）
-      const firstLine = text.split(/\r?\n/, 1)[0] || "";
-      if (!firstLine.includes(",") && firstLine.includes("\t")) {
-        text = text.replace(/\t/g, ",");
-      }
-
-      const rows = parseCSV(text);
+        const rows = parseCSV(text);
         if (!rows.length) { alert("找不到資料列"); return; }
 
         // 標頭正規化
@@ -902,7 +911,7 @@ export default function App() {
               byTitle[key] = item;
               ordered.push(item);
             }
-            // 未出現在 CSV 的舊專輯排後面
+            // 未出現在檔案的舊專輯排後面
             const rest = d.albums.filter(a => !ordered.find(x => x.id === a.id));
             alert(`已匯入專輯（含排序）：${ordered.length} 筆`);
             return { ...d, albums: [...ordered, ...rest] };
@@ -969,13 +978,11 @@ export default function App() {
               const kor  = has(col.kor) ? stripCell(r[col.kor]) : "";
               const zh   = has(col.zh)  ? stripCell(r[col.zh])  : "";
 
-              // 暫存於 __importLyrics 陣列（待會排序覆寫）
               const s = next[ai].songs[si] as Song & { __importLyrics?: { line:number; kor:string; zh:string }[] };
               (s.__importLyrics ||= []).push({ line, kor, zh });
               ok++;
             }
 
-            // 套用覆寫
             for (const a of next) for (let i=0;i<a.songs.length;i++) {
               const s = a.songs[i] as Song & { __importLyrics?: { line:number; kor:string; zh:string }[] };
               if (s.__importLyrics) {
@@ -1016,7 +1023,6 @@ export default function App() {
               ok++;
             }
 
-            // 覆寫 vocab
             for (const a of next) for (let i=0;i<a.songs.length;i++) {
               const s = a.songs[i] as Song & { __importVocab?: { word:string; zh:string }[] };
               if (s.__importVocab) {
@@ -1056,7 +1062,6 @@ export default function App() {
               ok++;
             }
 
-            // 覆寫 grammar
             for (const a of next) for (let i=0;i<a.songs.length;i++) {
               const s = a.songs[i] as Song & { __importGrammar?: { pattern:string; explain:string; example:string }[] };
               if (s.__importGrammar) {
@@ -1072,23 +1077,24 @@ export default function App() {
         }
 
       } catch (e) {
-        alert("CSV/TSV 解析或匯入失敗");
+        console.error(e);
+        alert("TXT/CSV/TSV 解析或匯入失敗");
       }
     };
     reader.readAsArrayBuffer(file);
   }
 
-  // 匯出/匯入選單（CSV/TSV；用專輯+歌名）
+  // 匯出/匯入選單（TXT/TSV；用專輯+歌名）
   const CSVMenu = (
     <>
-      <div className="px-3 py-1 text-xs text-zinc-500">匯出</div>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsCSV}>專輯（含排序）</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsCSV}>歌曲清單</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsCSVAll}>歌詞</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabCSVAll}>單字</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarCSVAll}>文法</button>
+      <div className="px-3 py-1 text-xs text-zinc-500">匯出（TXT / UTF-8 BOM, TSV）</div>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsTXT}>專輯（含排序）</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsTXT}>歌曲清單</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsTXTAll}>歌詞</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabTXTAll}>單字</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarTXTAll}>文法</button>
       <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">下載範本</div>
+      <div className="px-3 py-1 text-xs text-zinc-500">下載範本（TXT / TSV）</div>
       <div className="grid grid-cols-2 gap-1 px-2 pb-1">
         <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("albums")}>專輯</button>
         <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("songs")}>歌曲</button>
@@ -1097,13 +1103,13 @@ export default function App() {
         <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("grammar")}>文法</button>
       </div>
       <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">匯入（CSV 或 TSV）</div>
+      <div className="px-3 py-1 text-xs text-zinc-500">匯入（TXT/TSV/CSV）</div>
       <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
         選擇檔案
-        <input type="file" className="hidden" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={e=>{ const f=e.target.files?.[0]; if (f) importCSV(f); }}/>
+        <input type="file" className="hidden" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values,text/csv" onChange={e=>{ const f=e.target.files?.[0]; if (f) importCSV(f); }}/>
       </label>
       <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
-        表頭範例：<b>albumTitle, songTitle</b>…（支援中文表頭：專輯／歌名／韓文／中文／文法／說明／例句）
+        表頭：<b>albumTitle, songTitle</b>…（支援中文表頭：專輯／歌名／韓文／中文／文法／說明／例句）
       </div>
     </>
   );
@@ -1155,6 +1161,7 @@ export default function App() {
                 onReorderAlbum={reorderAlbum}
                 onReorderSong={reorderSong}
                 onDeleteSong={deleteSong}
+                onDeleteAlbum={deleteAlbum}
                 collapsed={collapsed}
                 onToggleCollapse={toggleCollapse}
               />
@@ -1209,9 +1216,9 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
   }, [data, selected]);
 
   return (
-    <div className="min-w-0 flex-1 space-y-4">
+    <div className="min-w-0 flex-1">
       {current ? (
-        <>
+        <div className="flex min-h-[calc(100vh-200px)] flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <SongTitleEditable
@@ -1228,11 +1235,11 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
             </div>
           </div>
 
-          {tab==='lyrics'  && <LyricsPanel  song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} editMode={editMode} setEditMode={setEditMode} />}
+          {tab==='lyrics'  && <div className="flex min-h-0 flex-1"><LyricsPanel  song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} editMode={editMode} setEditMode={setEditMode} /></div>}
           {tab==='vocab'   && <VocabPanel   song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} />}
           {tab==='flash'   && <FlashcardPanel song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} />}
           {tab==='grammar' && <GrammarPanel  song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} />}
-        </>
+        </div>
       ) : (
         <div className="rounded-2xl border bg-white/70 p-6 text-zinc-500">請在左側選擇或新增一首歌曲</div>
       )}
