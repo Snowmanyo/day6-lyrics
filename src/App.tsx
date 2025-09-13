@@ -83,7 +83,7 @@ function fileToDataURL(file: File): Promise<string> {
   return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
 }
 
-/* ===== 匯入工具（只用專輯+歌名；寬鬆表頭、支援 TSV/UTF-16） ===== */
+/* ===== 匯入工具（單一檔：只用專輯+歌名必填；其餘選填；支援 TSV/UTF-16） ===== */
 const BOM = "\uFEFF";
 const stripCell = (s: string) => (s || "").replace(BOM, "").trim();
 const normalizeHeader = (s: string) =>
@@ -111,8 +111,8 @@ const SEED: AppData = {
       releaseDate: "2015-09-07",
       cover: "",
       songs: [
-        { id: uid(), title: "Congratulations", releaseDate: "2015-09-07", lyrics: [], vocab: [], grammar: [] },
-        { id: uid(), title: "Freely", releaseDate: "2015-09-07", lyrics: [], vocab: [], grammar: [] },
+        { id: uid(), title: "Congratulations", releaseDate: "2015-09-07", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] },
+        { id: uid(), title: "Freely", releaseDate: "2015-09-07", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] },
       ],
     },
   ],
@@ -121,12 +121,29 @@ const SEED: AppData = {
 /* ===================== Small UI atoms ===================== */
 function TabButton({ active, children, onClick }: { active?: boolean; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <button onClick={onClick} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${active ? 'bg-black text-white' : 'border hover:bg-black/5'}`}>{children}</button>
+    <button
+      onClick={onClick}
+      className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${
+        active ? 'bg-[var(--soft)] text-black' : 'border-[var(--soft)] border-[var(--soft)]-[var(--soft)] hover:bg-[var(--soft)]/30'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
+
 function ToolbarButton({ children, onClick, type = 'button', className = '' }: { children: React.ReactNode; onClick?: () => void; type?: 'button'|'submit'|'reset'; className?: string }) {
-  return <button type={type} onClick={onClick} className={`shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm hover:bg-black/5 active:scale-[0.99] ${className}`}>{children}</button>;
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      className={`shrink-0 whitespace-nowrap rounded-xl border-[var(--soft)] border-[var(--soft)]-[var(--soft)] px-3 py-1.5 text-sm hover:bg-[var(--soft)]/30 active:scale-[0.99] ${className}`}
+    >
+      {children}
+    </button>
+  );
 }
+
 function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -140,7 +157,7 @@ function DropMenu({ label, items }: { label: string; items: React.ReactNode }) {
     <div ref={ref} className="relative">
       <ToolbarButton onClick={() => setOpen(o => !o)}>{label}</ToolbarButton>
       {open && (
-        <div className="absolute right-0 z-[9999] mt-1 w-64 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
+        <div className="absolute right-0 z-[9999] mt-1 w-72 overflow-hidden rounded-lg border-[var(--soft)] border-[var(--soft)]-[var(--soft)] bg-white py-1 text-sm shadow-xl">
           {items}
         </div>
       )}
@@ -152,7 +169,7 @@ function Modal({ open, onClose, children, title }: { open: boolean; onClose: () 
   return (
     <div className="fixed inset-0 z-[9500] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-[9600] w-[min(740px,92vw)] rounded-2xl border bg-white p-4 shadow-2xl">
+      <div className="relative z-[9600] w-[min(740px,92vw)] rounded-2xl border-[var(--soft)] border-[var(--soft)]-[var(--soft)] bg-white p-4 shadow-2xl">
         <div className="mb-3 flex items-center justify-between"><div className="text-lg font-semibold">{title}</div><ToolbarButton onClick={onClose}>關閉</ToolbarButton></div>
         {children}
       </div>
@@ -164,7 +181,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v:boolean)
     <button
       type="button"
       onClick={()=>onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full border ${checked ? 'bg-black' : 'bg-white'}`}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full border-[var(--soft)] ${checked ? 'bg-black' : 'bg-white'}`}
       aria-pressed={checked}
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
@@ -197,13 +214,13 @@ function DesktopSidebar({
   onToggleCollapse: (albumId: string)=>void;
 }) {
   return (
-    <aside className="w-[317px] shrink-0 overflow-y-auto border-r p-3 hidden md:block">
+      <aside className="hidden w-[317px] shrink-0 overflow-y-auto border-[var(--soft)]-r border-[var(--soft)]-[var(--soft)] p-3 md:block">
       <div className="w-[284px]">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-semibold">專輯 / 歌曲</div>
           <button
             onClick={()=>{ if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
-            className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${sortMode ? 'bg-black/5' : ''}`}
+            className={`rounded-lg border-[var(--soft)] border-[var(--soft)]-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30 ${sortMode ? 'bg-[var(--soft)]/20' : ''}`}
             title="切換排序模式（上下移動）"
           >
             {sortMode ? '完成' : '排序'}
@@ -218,19 +235,19 @@ function DesktopSidebar({
             const isCollapsed = !!collapsed[a.id];
 
             return (
-              <div key={a.id} className="w-[284px] overflow-hidden rounded-xl border bg-white/70 p-2">
+              <div key={a.id} className="w-[284px] overflow-hidden rounded-xl border-[var(--soft)] border-[var(--soft)]-[var(--soft)] bg-white/70 p-2">
                 {/* Header */}
                 {!editing ? (
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <button
                         onClick={()=>onToggleCollapse(a.id)}
-                        className="shrink-0 rounded-md border px-1.5 py-1 text-xs hover:bg-black/5"
+                        className="shrink-0 rounded-md border-[var(--soft)] px-1.5 py-1 text-xs hover:bg-[var(--soft)]/30"
                         aria-label={isCollapsed ? '展開' : '收合'}
                         title={isCollapsed ? '展開' : '收合'}
                       >{isCollapsed ? "▶" : "▼"}</button>
 
-                      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60">
+                      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border-[var(--soft)] bg-white/60">
                         {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">無封面</div>}
                       </div>
                       <div className="min-w-0">
@@ -243,13 +260,13 @@ function DesktopSidebar({
                       {sortMode ? (
                         <>
                           <button
-                            className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                            className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30 disabled:opacity-40"
                             onClick={()=>onReorderAlbum(albumIdx, albumIdx-1)}
                             disabled={atTop}
                             title="上移專輯"
                           >▲</button>
                           <button
-                            className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                            className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30 disabled:opacity-40"
                             onClick={()=>onReorderAlbum(albumIdx, albumIdx+1)}
                             disabled={atBottom}
                             title="下移專輯"
@@ -258,7 +275,7 @@ function DesktopSidebar({
                       ) : (
                         <button
                           onClick={()=>onToggleAlbumEdit(a.id)}
-                          className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
+                          className="shrink-0 rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30"
                           title="編輯專輯"
                         >✎</button>
                       )}
@@ -266,45 +283,45 @@ function DesktopSidebar({
                   </div>
                 ) : (
                   <div className="mb-2 space-y-2">
-                    <div className="flex items中心 justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <button
                           onClick={()=>onToggleCollapse(a.id)}
-                          className="shrink-0 rounded-md border px-1.5 py-1 text-xs hover:bg黑/5"
+                          className="shrink-0 rounded-md border-[var(--soft)] px-1.5 py-1 text-xs hover:bg-[var(--soft)]/30"
                           title="收合/展開"
                         >{collapsed[a.id] ? "▶" : "▼"}</button>
-                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60">
+                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border-[var(--soft)] bg-white/60">
                           {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">無封面</div>}
                         </div>
                         <div className="min-w-0">
                           <input
                             value={a.title}
                             onChange={e=>onUpdateAlbum(a.id,{title:e.target.value})}
-                            className="w-full truncate rounded-md border px-2 py-1 text-sm font-medium"
+                            className="w-full truncate rounded-md border-[var(--soft)] px-2 py-1 text-sm font-medium"
                           />
                           <input
                             type="date"
                             value={a.releaseDate}
                             onChange={e=>onUpdateAlbum(a.id,{releaseDate:e.target.value})}
-                            className="mt-1 w-full truncate rounded-md border px-2 py-1 text-xs"
+                            className="mt-1 w-full truncate rounded-md border-[var(--soft)] px-2 py-1 text-xs"
                           />
                         </div>
                       </div>
                       <button
                         onClick={()=>onToggleAlbumEdit(null)}
-                        className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
+                        className="shrink-0 rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30"
                         title="完成編輯"
                       >完成</button>
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="cursor-pointer rounded-lg border px-2 py-1 text-xs hover:bg-black/5">
+                      <label className="cursor-pointer rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30">
                         上傳封面
                         <input type="file" accept="image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if (f) onUploadAlbumCover(a.id, f); }} />
                       </label>
-                      {a.cover && <button onClick={()=>onUpdateAlbum(a.id,{cover:""})} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">清除封面</button>}
+                      {a.cover && <button onClick={()=>onUpdateAlbum(a.id,{cover:""})} className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30">清除封面</button>}
                       <button
                         onClick={()=>{ if (confirm(`確定要刪除專輯「${a.title}」？此操作將刪除底下所有歌曲。`)) onDeleteAlbum(a.id); }}
-                        className="rounded-lg border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
+                        className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs text-red-600 hover:bg-[var(--soft)]/30"
                       >刪除專輯</button>
                     </div>
                   </div>
@@ -322,7 +339,7 @@ function DesktopSidebar({
                           <div className="grid w-full grid-cols-[1fr,auto] items-center gap-2">
                             <button
                               onClick={()=>onSelect(a.id, s.id)}
-                              className={`min-w-0 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}
+                              className={`min-w-0 rounded-lg px-2 py-1 text-left hover:bg-[var(--soft)]/30 ${selected?.songId===s.id ? 'bg-[var(--soft)]/20 font-medium' : ''}`}
                               title="開啟歌曲"
                             >
                               <div className="truncate">{s.title}</div>
@@ -331,13 +348,13 @@ function DesktopSidebar({
                             {sortMode ? (
                               <div className="flex items-center gap-1">
                                 <button
-                                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                                  className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30 disabled:opacity-40"
                                   onClick={()=>onReorderSong(a.id, songIdx, songIdx-1)}
                                   disabled={sTop}
                                   title="上移歌曲"
                                 >▲</button>
                                 <button
-                                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                                  className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30 disabled:opacity-40"
                                   onClick={()=>onReorderSong(a.id, songIdx, songIdx+1)}
                                   disabled={sBottom}
                                   title="下移歌曲"
@@ -346,7 +363,7 @@ function DesktopSidebar({
                             ) : editing ? (
                               <button
                                 onClick={(e)=>{ e.stopPropagation(); onDeleteSong(a.id, s.id); }}
-                                className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
+                                className="shrink-0 rounded-md border-[var(--soft)] px-2 py-1 text-xs text-red-600 hover:bg-[var(--soft)]/30"
                                 title="刪除此歌曲"
                               >×</button>
                             ) : null}
@@ -378,27 +395,27 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <div className={`absolute left-0 top-0 h-full w-[85vw] max-w-[320px] transform bg-white shadow-2xl transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex items-center justify-between gap-2 border-b p-3">
+        <div className="flex items-center justify-between gap-2 border-[var(--soft)]-b p-3">
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
-            <button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">+ 專輯</button>
-            <button className="rounded-lg border px-2 py-1 text-sm hover:bg黑/5" onClick={onClose}>關閉</button>
+            <button onClick={onOpenAddAlbum} className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30">+ 專輯</button>
+            <button className="rounded-lg border-[var(--soft)] px-2 py-1 text-sm hover:bg-[var(--soft)]/30" onClick={onClose}>關閉</button>
           </div>
         </div>
         <div className="h-[calc(100%-49px)] space-y-3 overflow-auto p-3">
           {data.albums.map(a => (
-            <div key={a.id} className="rounded-xl border p-2">
+            <div key={a.id} className="rounded-xl border-[var(--soft)] p-2">
               <div className="mb-1 flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{a.title}</div>
                   <div className="truncate text-xs text-zinc-500">{a.releaseDate}</div>
                 </div>
-                <button onClick={()=>onOpenAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">+ 歌曲</button>
+                <button onClick={()=>onOpenAddSong(a.id)} className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30">+ 歌曲</button>
               </div>
               <ul className="space-y-1">
                 {a.songs.map(s => (
                   <li key={s.id}>
-                    <button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg黑/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}>
+                    <button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg-[var(--soft)]/30 ${selected?.songId===s.id ? 'bg-[var(--soft)]/20 font-medium' : ''}`}>
                       <div className="truncate">{s.title}</div>
                     </button>
                   </li>
@@ -436,7 +453,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-2xl border bg-white/70 p-4">
+    <div className="flex min-h-0 flex-1 flex-col rounded-2xl border-[var(--soft)] bg-white/70 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">歌詞</div>
         <div className="flex items-center gap-2 text-sm">
@@ -461,7 +478,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
             <textarea
               value={korDraft}
               onChange={e=>setKorDraft(e.target.value)}
-              className="h-48 w-full rounded-lg border px-3 py-2"
+              className="h-48 w-full rounded-lg border-[var(--soft)] px-3 py-2"
             />
           </div>
           <div className="col-span-12 md:col-span-6">
@@ -469,7 +486,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
             <textarea
               value={zhDraft}
               onChange={e=>setZhDraft(e.target.value)}
-              className="h-48 w-full rounded-lg border px-3 py-2"
+              className="h-48 w-full rounded-lg border-[var(--soft)] px-3 py-2"
             />
           </div>
         </div>
@@ -477,9 +494,9 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
 
       <div className="mt-4 flex-1 overflow-auto">
         <div className="mb-2 text-sm font-medium">對照預覽</div>
-        <div className="rounded-xl border bg-white/60">
+        <div className="rounded-xl border-[var(--soft)] bg-white/60">
           {aligned.map((l, i) => (
-            <div key={i} className="grid grid-cols-12 gap-2 border-b px-3 py-2 last:border-none">
+            <div key={i} className="grid grid-cols-12 gap-2 border-[var(--soft)]-b px-3 py-2 last:border-[var(--soft)]-none">
               <div className="col-span-12 md:col-span-6 whitespace-pre-wrap">{l.kor || <span className="text-zinc-400">(空)</span>}</div>
               <div className="col-span-12 md:col-span-6 whitespace-pre-wrap">{l.zh  || <span className="text-zinc-400">(空)</span>}</div>
             </div>
@@ -512,7 +529,7 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
   function save() { onUpdate({ vocab: draft }); setEdit(false); }
 
   return (
-    <div className="rounded-2xl border bg-white/70 p-4">
+    <div className="rounded-2xl border-[var(--soft)] bg-white/70 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">單字表（含中文）</div>
         <div className="flex flex-wrap items-center gap-2">
@@ -524,36 +541,36 @@ function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<
           ) : (
             <ToolbarButton onClick={()=>setEdit(true)}>編輯</ToolbarButton>
           )}
-          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-lg border px-2 py-1 text-sm w-[140px] md:w-[180px]"/>
+          <input placeholder="過濾…" value={filter} onChange={e=>setFilter(e.target.value)} className="w-[140px] rounded-lg border-[var(--soft)] px-2 py-1 text-sm outline-none md:w-[180px]"/>
         </div>
       </div>
 
       <div className="mb-3 grid grid-cols-12 gap-2">
-        <input value={newWord} onChange={e=>setNewWord(e.target.value)} placeholder="韓文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
-        <input value={newZh} onChange={e=>setNewZh(e.target.value)} placeholder="中文" className="col-span-6 md:col-span-5 rounded-lg border px-2 py-1"/>
-        <ToolbarButton onClick={addFromInputs} className="col-span-12 md:col-span-2 text-center">+ 新增</ToolbarButton>
+        <input value={newWord} onChange={e=>setNewWord(e.target.value)} placeholder="韓文" className="col-span-6 md:col-span-5 rounded-lg border-[var(--soft)] px-2 py-1"/>
+        <input value={newZh} onChange={e=>setNewZh(e.target.value)} placeholder="中文" className="col-span-6 md:col-span-5 rounded-lg border-[var(--soft)] px-2 py-1"/>
+        <ToolbarButton onClick={addFromInputs} className="col-span-12 text-center md:col-span-2">+ 新增</ToolbarButton>
       </div>
 
-      <div className="overflow-auto rounded-xl border">
+      <div className="overflow-auto rounded-xl border-[var(--soft)]">
         <table className="w-full text-sm">
           <thead className="bg-white/70">
-            <tr className="border-b text-left">
+            <tr className="border-[var(--soft)]-b text-left">
               <th className="w-1/2 px-3 py-2">韓文</th>
               <th className="w-1/2 px-3 py-2">中文</th>
-              <th className="px-3 py-2 text-right whitespace-nowrap">操作</th>
+              <th className="whitespace-nowrap px-3 py-2 text-right">操作</th>
             </tr>
           </thead>
-          <tbody>
+        <tbody>
             {list.map(v => (
-              <tr key={v.id} className="border-b">
+              <tr key={v.id} className="border-[var(--soft)]-b">
                 <td className="px-3 py-2">
                   {edit ? <input value={v.word} onChange={e=>up(v.id,{word:e.target.value})} className="w-full bg-transparent outline-none"/> : <span>{v.word}</span>}
                 </td>
                 <td className="px-3 py-2">
                   {edit ? <input value={v.zh||""} onChange={e=>up(v.id,{zh:e.target.value})} className="w-full bg-transparent outline-none"/> : <span>{v.zh}</span>}
                 </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {edit ? <button onClick={()=>del(v.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">刪除</button> : <span className="text-xs text-zinc-400">—</span>}
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  {edit ? <button onClick={()=>del(v.id)} className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30">刪除</button> : <span className="text-xs text-zinc-400">—</span>}
                 </td>
               </tr>
             ))}
@@ -575,7 +592,7 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
   function save() { onUpdate({ grammar: draft }); setEdit(false); }
 
   return (
-    <div className="rounded-2xl border bg白/70 p-4">
+    <div className="rounded-2xl border-[var(--soft)] bg-white/70 p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">文法點</div>
         <div className="flex items-center gap-2">
@@ -594,10 +611,10 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
       {!edit ? (
         <div className="space-y-3">
           {draft.map(g => (
-            <div key={g.id} className="rounded-xl border p-3">
+            <div key={g.id} className="rounded-xl border-[var(--soft)] p-3">
               <div className="font-medium">{g.pattern || <span className="text-zinc-400">（未填）</span>}</div>
               {g.explain && <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-700">{g.explain}</div>}
-              {g.example && <div className="mt-1 rounded-md bg-black/5 px-2 py-1 text-sm"><span className="text-zinc-500">例句：</span>{g.example}</div>}
+              {g.example && <div className="mt-1 rounded-md bg-[var(--soft)]/20 px-2 py-1 text-sm"><span className="text-zinc-500">例句：</span>{g.example}</div>}
             </div>
           ))}
           {draft.length===0 && <div className="py-6 text-center text-sm text-zinc-500">尚未新增文法點</div>}
@@ -605,13 +622,13 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
       ) : (
         <div className="space-y-3">
           {draft.map(g => (
-            <div key={g.id} className="rounded-xl border p-3">
+            <div key={g.id} className="rounded-xl border-[var(--soft)] p-3">
               <div className="grid grid-cols-12 gap-2">
-                <input value={g.pattern} onChange={e=>up(g.id,{pattern:e.target.value})} placeholder="文法（如：-(으)니까）" className="col-span-12 md:col-span-4 rounded-lg border px-2 py-1"/>
-                <textarea value={g.explain||""} onChange={e=>up(g.id,{explain:e.target.value})} placeholder="說明" className="col-span-12 md:col-span-8 min-h-[60px] rounded-lg border px-2 py-1"/>
-                <input value={g.example||""} onChange={e=>up(g.id,{example:e.target.value})} placeholder="例句（可選）" className="col-span-12 rounded-lg border px-2 py-1"/>
+                <input value={g.pattern} onChange={e=>up(g.id,{pattern:e.target.value})} placeholder="文法（如：-(으)니까）" className="col-span-12 md:col-span-4 rounded-lg border-[var(--soft)] px-2 py-1"/>
+                <textarea value={g.explain||""} onChange={e=>up(g.id,{explain:e.target.value})} placeholder="說明" className="col-span-12 md:col-span-8 min-h-[60px] rounded-lg border-[var(--soft)] px-2 py-1"/>
+                <input value={g.example||""} onChange={e=>up(g.id,{example:e.target.value})} placeholder="例句（可選）" className="col-span-12 rounded-lg border-[var(--soft)] px-2 py-1"/>
               </div>
-              <div className="mt-2 text-right"><button onClick={()=>del(g.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">刪除</button></div>
+              <div className="mt-2 text-right"><button onClick={()=>del(g.id)} className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30">刪除</button></div>
             </div>
           ))}
           {draft.length===0 && <div className="py-6 text-center text-sm text-zinc-500">尚未新增文法點</div>}
@@ -621,89 +638,24 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
   );
 }
 
-function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
-  const vocab = song.vocab;
-  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
-  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
-  const [reveal, setReveal] = useState(false);
-  useEffect(()=>{ setQueue(vocab.map((_,i)=>i)); setMeta(vocab.map(()=>({firstSeen:false}))); setReveal(false); }, [vocab.map(v=>v.id).join(',')]);
-  const total = vocab.length; const currentIdx = queue[0] ?? null; const current = currentIdx != null ? vocab[currentIdx] : null; const firstSeenCount = meta.filter(m => m.firstSeen).length;
-  function grade(level: 'again' | 'good' | 'easy') {
-    if (currentIdx == null) return;
-    setMeta(m => { const next = [...m]; if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true; return next; });
-    setQueue(q => { const rest = q.slice(1); if (level === 'again') { const insertAt = Math.min(2, rest.length); return [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)]; } if (level === 'good') return [...rest, currentIdx]; return rest; });
-  }
-  if (total === 0) return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-sm">尚無單字</div>
-      <ToolbarButton onClick={()=>{
-        const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
-        onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
-      }}>從歌詞自動擷取</ToolbarButton>
-    </div>
-  );
-  if (current == null) return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-sm">本輪完成！</div>
-      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
-    </div>
-  );
-  return (
-    <div className="rounded-2xl border bg-white/70 p-6 text-center">
-      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
-      <div className="text-2xl font-bold">{current.word}</div>
-      <div className="mt-2 text-lg text-zinc-700">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
-      <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
-      <div className="mt-3 flex flex-wrap justify-center gap-2">
-        <button onClick={()=>grade('again')} className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">不熟</button>
-        <button onClick={()=>grade('good')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">一般</button>
-        <button onClick={()=>grade('easy')}  className="rounded-lg border px-3 py-2 text-sm hover:bg-black/5">很熟</button>
-      </div>
-    </div>
-  );
-}
-
-/* Inline editors */
+/* Inline title editor（歌曲標題✎） */
 function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: string)=>void }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(title);
   useEffect(()=>{ setVal(title); }, [title]);
   if (!editing) {
     return (
-      <div className="text-2xl font-bold flex items-center gap-2">
+      <div className="flex items-center gap-2 text-2xl font-bold">
         <span className="truncate">{title}</span>
-        <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>setEditing(true)} title="編輯歌名">✎</button>
+        <button className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30" onClick={()=>setEditing(true)} title="編輯歌名">✎</button>
       </div>
     );
   }
   return (
     <div className="flex items-center gap-2">
-      <input value={val} onChange={e=>setVal(e.target.value)} className="text-2xl font-bold rounded-md border px-2 py-1" autoFocus />
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ onSave(val.trim() || title); setEditing(false); }}>儲存</button>
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ setVal(title); setEditing(false); }}>取消</button>
-    </div>
-  );
-}
-
-function MetaEditable({ label, value, placeholder, onSave }: { label: string; value?: string; placeholder?: string; onSave: (v: string)=>void }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(value || "");
-  useEffect(()=>{ setVal(value || ""); }, [value]);
-  if (!editing) {
-    return (
-      <div className="flex items-center gap-1 text-sm">
-        <span className="text-zinc-500">{label}：</span>
-        <span className="min-w-[24px]">{value || <span className="text-zinc-400">（未填）</span>}</span>
-        <button className="rounded-md border px-1 py-0.5 text-[11px] hover:bg-black/5" onClick={()=>setEditing(true)} title={`編輯${label}`}>✎</button>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-1 text-sm">
-      <span className="text-zinc-500">{label}：</span>
-      <input value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder} className="rounded-md border px-2 py-1 text-sm" autoFocus />
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg黑/5" onClick={()=>{ onSave(val.trim()); setEditing(false); }}>儲存</button>
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg黑/5" onClick={()=>{ setVal(value||""); setEditing(false); }}>取消</button>
+      <input value={val} onChange={e=>setVal(e.target.value)} className="text-2xl font-bold rounded-md border-[var(--soft)] px-2 py-1" autoFocus />
+      <button className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30" onClick={()=>{ onSave(val.trim() || title); setEditing(false); }}>儲存</button>
+      <button className="rounded-md border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30" onClick={()=>{ setVal(title); setEditing(false); }}>取消</button>
     </div>
   );
 }
@@ -740,14 +692,15 @@ export default function App() {
     setData(d => ({ ...d, albums: arrayMove(d.albums, fromIdx, toIdx) }));
   }
   function reorderSong(albumId: string, fromIdx: number, toIdx: number) {
-    setData(d => {
-      const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
-      const album = d.albums[ai];
-      const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
-      const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: nextSongs };
-      return { ...d, albums: nextAlbums };
-    });
-  }
+  setData(d => {
+    const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
+    const album = d.albums[ai];
+    const nextSongs = arrayMove(album.songs, fromIdx, toIdx);
+    const nextAlbums = [...d.albums]; nextAlbums[ai] = { ...album, songs: nextSongs };
+    return { ...d, albums: nextAlbums };
+  });
+}
+
   function deleteSong(albumId: string, songId: string) {
     setData(d => {
       const ai = d.albums.findIndex(a => a.id === albumId); if (ai < 0) return d;
@@ -808,7 +761,7 @@ export default function App() {
     setData(d => ({ ...d, albums: d.albums.map(a => ({ ...a, songs: a.songs.map(s => s.id===songId ? { ...s, ...patch } : s) })) }));
   }
 
-  /* ===== 匯出（TXT/TSV） ===== */
+  /* ===== 匯出（TXT/TSV；可各別，也提供「整包」單一檔） ===== */
   function exportAlbumsTXT() {
     const rows: (string|number)[][] = [["albumTitle","releaseDate","cover"]];
     for (const a of data.albums) rows.push([a.title, a.releaseDate, a.cover||""]);
@@ -834,27 +787,48 @@ export default function App() {
     for (const a of data.albums) for (const s of a.songs) for (const g of s.grammar) rows.push([a.title, s.title, g.pattern, g.explain||"", g.example||""]);
     download(`grammar.txt`, toTSV(rows));
   }
-
-  // 範本（只含表頭）
-  function downloadTemplate(kind: "albums"|"songs"|"lyrics"|"vocab"|"grammar"|"unified") {
-    const header: Record<string,string[]> = {
-      albums:  ["albumTitle","releaseDate(YYYY-MM-DD)","cover(optional dataURL or URL)"],
-      songs:   ["albumTitle","songTitle","releaseDate(optional)","lyricist(optional)","composer(optional)"],
-      lyrics:  ["albumTitle","songTitle","line(1-based optional)","kor","zh"],
-      vocab:   ["albumTitle","songTitle","word","zh(optional)"],
-      grammar: ["albumTitle","songTitle","pattern","explain(optional)","example(optional)"],
-      unified: [
-        "albumTitle","songTitle",
-        "releaseDate(optional)","lyricist(optional)","composer(optional)","cover(optional)",
-        "line(optional)","kor(optional)","zh(optional)",
-        "word(optional)","pattern(optional)","explain(optional)","example(optional)"
-      ],
-    };
-    download(`${kind}-template.txt`, toTSV([header[kind]]));
+  // 整包匯出：單一檔
+  function exportAllTXT() {
+    const rows: (string|number)[][] = [[
+      "albumTitle","albumReleaseDate","cover",
+      "songTitle","songReleaseDate","lyricist","composer",
+      "line","kor","zh",
+      "word", /*"wordZh(=zh)"*/ "",
+      "pattern","explain","example"
+    ]];
+    for (const a of data.albums) {
+      for (const s of a.songs) {
+        // 歌詞
+        if (s.lyrics.length === 0) {
+          rows.push([a.title,a.releaseDate,a.cover||"", s.title,s.releaseDate||"", s.lyricist||"", s.composer||"", "", "", "", "", "", "", ""]);
+        } else {
+          s.lyrics.forEach((l,idx)=>{
+            rows.push([a.title,a.releaseDate,a.cover||"", s.title,s.releaseDate||"", s.lyricist||"", s.composer||"", idx+1, l.kor, l.zh, "", "", "", ""]);
+          });
+        }
+        // 單字
+        for (const v of s.vocab) rows.push([a.title,a.releaseDate,a.cover||"", s.title,s.releaseDate||"", s.lyricist||"", s.composer||"", "", "", v.zh||"", v.word, "", "", ""]);
+        // 文法
+        for (const g of s.grammar) rows.push([a.title,a.releaseDate,a.cover||"", s.title,s.releaseDate||"", s.lyricist||"", s.composer||"", "", "", "", "", g.pattern, g.explain||"", g.example||""]);
+      }
+    }
+    download(`all-in-one.txt`, toTSV(rows));
   }
 
-  /* ===== 匯入（支援單一表格；UTF-8/UTF-16；TSV/CSV） ===== */
-  function importCSV(file: File) {
+  // 範本（整包：單一檔）
+  function downloadAllTemplate() {
+    const header = [[
+      "albumTitle","songTitle",
+      "albumReleaseDate(optional)","cover(optional dataURL or URL)",
+      "songReleaseDate(optional)","lyricist(optional)","composer(optional)",
+      "line(optional)","kor(optional)","zh(optional)","word(optional)",
+      "pattern(optional)","explain(optional)","example(optional)"
+    ]];
+    download(`all-template.txt`, toTSV(header));
+  }
+
+  /* ===== 匯入（單一檔；支援 TXT/TSV/CSV；UTF-8/UTF-16 自動偵測） ===== */
+  function importALL(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -880,14 +854,15 @@ export default function App() {
         const rawHeader = rows[0].map(c => stripCell(c));
         const H = rawHeader.map(normalizeHeader);
 
-        // 欄位（中英皆可）
+        // 欄位（中英皆可；僅 albumTitle、songTitle 必填）
         const col = {
           albumTitle:   idxOfAny(H, ["albumtitle","album","專輯","專輯名稱","專輯名"]),
           songTitle:    idxOfAny(H, ["songtitle","song","title","歌曲","歌名"]),
-          releaseDate:  idxOfAny(H, ["releasedate","date","發佈日","發佈日期","發布日","發布日期"]),
+          albumDate:    idxOfAny(H, ["albumreleasedate","albumdate","專輯發佈日","專輯發佈日期","專輯发布日期","專輯日期"]),
           cover:        idxOfAny(H, ["cover","封面","圖片","封面圖"]),
-          lyricist:     idxOfAny(H, ["lyricist","作詞","詞作者","填詞"]),
-          composer:     idxOfAny(H, ["composer","作曲","曲作者","譜曲"]),
+          songDate:     idxOfAny(H, ["songreleasedate","releasedate","date","發佈日","發佈日期","發布日","發布日期"]),
+          lyricist:     idxOfAny(H, ["lyricist","lyricsby","作詞","填詞"]),
+          composer:     idxOfAny(H, ["composer","composedby","作曲"]),
           line:         idxOfAny(H, ["line","行","行號","序"]),
           kor:          idxOfAny(H, ["kor","korean","kr","han","韓文"]),
           zh:           idxOfAny(H, ["zh","chinese","cn","中文","翻譯","釋義"]),
@@ -897,349 +872,98 @@ export default function App() {
           example:      idxOfAny(H, ["example","例句"]),
         };
 
-        const has = (i: number) => i >= 0;
-        // 新：統一表格偵測（album+song 必填，其它任一欄存在即為統一表）
-        const kindUnified = has(col.albumTitle) && has(col.songTitle) &&
-          (has(col.kor) || has(col.zh) || has(col.word) || has(col.pattern) || has(col.lyricist) || has(col.composer) || has(col.releaseDate) || has(col.cover) || has(col.line));
-
-        // 舊：個別檔支援（保留相容）
-        const kindAlbums  = has(col.albumTitle) && !has(col.songTitle) && !has(col.word) && !has(col.pattern) && !has(col.kor) && !has(col.zh);
-        const kindSongs   = has(col.albumTitle) && has(col.songTitle) && !has(col.kor) && !has(col.word) && !has(col.pattern);
-        const kindLyrics  = has(col.albumTitle) && has(col.songTitle) && (has(col.kor) || has(col.zh));
-        const kindVocab   = has(col.albumTitle) && has(col.songTitle) && has(col.word);
-        const kindGrammar = has(col.albumTitle) && has(col.songTitle) && has(col.pattern);
-
-        if (!(kindUnified || kindAlbums || kindSongs || kindLyrics || kindVocab || kindGrammar)) {
-          alert(
-            "無法辨識的表頭。\n" +
-            "建議使用『unified-template.txt』。\n" +
-            "可接受的表頭：\n" +
-            "• 統一：albumTitle, songTitle, [releaseDate], [lyricist], [composer], [cover], [line], [kor], [zh], [word], [pattern], [explain], [example]\n" +
-            "（也支援舊的：專輯／歌曲／歌詞／單字／文法 各自檔案）"
-          );
+        if (col.albumTitle < 0 || col.songTitle < 0) {
+          alert("缺少必要欄位：albumTitle、songTitle");
           return;
         }
 
         const body = rows.slice(1);
 
-        // ====== 統一表格 ======
-        if (kindUnified) {
-          setData(d => {
-            // 深拷貝（不破壞 songs 陣列引用）
-            const next = d.albums.map(a => ({ ...a, songs: a.songs.map(s => ({ ...s })) }));
-            // 用於排序歌詞行：若檔案未給 line，就以出現順序記錄
-            const perSongRowSeq: Record<string, number> = {};
+        setData(d => {
+          const albums = [...d.albums].map(a => ({ ...a, songs: [...a.songs] }));
+          let ok = 0, skip = 0;
 
-            const getAlbumIndex = (title: string) => {
-              const key = title.toLowerCase();
-              let ai = next.findIndex(a => a.title.toLowerCase() === key);
-              if (ai < 0) { next.push({ id: uid(), title, releaseDate: today(), cover: "", songs: [] }); ai = next.length - 1; }
-              return ai;
+          for (const r of body) {
+            const aTitle = stripCell(r[col.albumTitle]||"");
+            const sTitle = stripCell(r[col.songTitle] ||"");
+            if (!aTitle || !sTitle) { skip++; continue; }
+
+            const albumDate = col.albumDate >= 0 ? stripCell(r[col.albumDate]) : "";
+            const cover     = col.cover     >= 0 ? stripCell(r[col.cover])     : "";
+            const songDate  = col.songDate  >= 0 ? stripCell(r[col.songDate])  : "";
+            const lyricist  = col.lyricist  >= 0 ? stripCell(r[col.lyricist])  : "";
+            const composer  = col.composer  >= 0 ? stripCell(r[col.composer])  : "";
+            const line      = col.line      >= 0 ? Number(stripCell(r[col.line])) || NaN : NaN;
+            const kor       = col.kor       >= 0 ? stripCell(r[col.kor])       : "";
+            const zh        = col.zh        >= 0 ? stripCell(r[col.zh])        : "";
+            const word      = col.word      >= 0 ? stripCell(r[col.word])      : "";
+            const pattern   = col.pattern   >= 0 ? stripCell(r[col.pattern])   : "";
+            const explain   = col.explain   >= 0 ? stripCell(r[col.explain])   : "";
+            const example   = col.example   >= 0 ? stripCell(r[col.example])   : "";
+
+            // 查/建 專輯
+            let ai = albums.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
+            if (ai < 0) { albums.push({ id: uid(), title: aTitle, releaseDate: albumDate || today(), cover, songs: [] }); ai = albums.length - 1; }
+            else {
+              if (albumDate) albums[ai].releaseDate = albumDate;
+              if (cover) albums[ai].cover = cover;
+            }
+
+            // 查/建 歌曲
+            let si = albums[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
+            if (si < 0) { albums[ai].songs.push({ id: uid(), title: sTitle, releaseDate: songDate, lyricist, composer, lyrics: [], vocab: [], grammar: [] }); si = albums[ai].songs.length - 1; }
+            else {
+              const s = albums[ai].songs[si];
+              if (songDate) s.releaseDate = songDate;
+              if (lyricist) s.lyricist = lyricist;
+              if (composer) s.composer = composer;
+            }
+
+            // 累積內容（同一列可同時提供多種資料）
+            const s = albums[ai].songs[si] as Song & {
+              __importLyrics?: { line:number; kor:string; zh:string }[];
+              __importVocab?: { word:string; zh:string }[];
+              __importGrammar?: { pattern:string; explain:string; example:string }[];
             };
-            const getSongIndex = (ai: number, title: string) => {
-              const key = title.toLowerCase();
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === key);
-              if (si < 0) { next[ai].songs.push({ id: uid(), title, releaseDate: "", lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] }); si = next[ai].songs.length - 1; }
-              return si;
-            };
+            if (kor || (!Number.isNaN(line) && !isNaN(line))) {
+              const lnum = Number.isNaN(line) ? (s.__importLyrics?.length ?? 0) + 1 : line;
+              (s.__importLyrics ||= []).push({ line: lnum, kor, zh });
+            }
+            if (word) (s.__importVocab ||= []).push({ word, zh });
+            if (pattern) (s.__importGrammar ||= []).push({ pattern, explain, example });
 
-            for (let rowIdx = 0; rowIdx < body.length; rowIdx++) {
-              const r = body[rowIdx];
-              const aTitle = has(col.albumTitle) ? stripCell(r[col.albumTitle]) : "";
-              const sTitle = has(col.songTitle)  ? stripCell(r[col.songTitle ]) : "";
-              if (!aTitle || !sTitle) continue;
+            ok++;
+          }
 
-              const ai = getAlbumIndex(aTitle);
-              const si = getSongIndex(ai, sTitle);
-              const album = next[ai];
-              const song  = next[ai].songs[si] as Song & {
+          // 寫回累積的內容
+          for (const a of albums) {
+            for (let i=0;i<a.songs.length;i++) {
+              const s = a.songs[i] as Song & {
                 __importLyrics?: { line:number; kor:string; zh:string }[];
                 __importVocab?: { word:string; zh:string }[];
                 __importGrammar?: { pattern:string; explain:string; example:string }[];
-                __touchedLyrics?: boolean;
-                __touchedVocab?: boolean;
-                __touchedGrammar?: boolean;
               };
-
-              // 可選：專輯封面（若有提供就覆蓋）
-              if (has(col.cover)) {
-                const coverVal = stripCell(r[col.cover]);
-                if (coverVal) album.cover = coverVal;
-              }
-
-              // 可選：歌曲資訊（針對該 row 有值就覆蓋）
-              if (has(col.releaseDate)) {
-                const dt = stripCell(r[col.releaseDate]); if (dt) song.releaseDate = dt;
-              }
-              if (has(col.lyricist)) {
-                const v = stripCell(r[col.lyricist]); if (v || v==="") song.lyricist = v;
-              }
-              if (has(col.composer)) {
-                const v = stripCell(r[col.composer]); if (v || v==="") song.composer = v;
-              }
-
-              // 歌詞（允許只有 kor 或只有 zh；無 line 則依出現順序）
-              const hasKorOrZh = (has(col.kor) || has(col.zh));
-              if (hasKorOrZh) {
-                const seqKey = `${ai}:${si}`;
-                const seq = (perSongRowSeq[seqKey] ||= 0) + 1;
-                perSongRowSeq[seqKey] = seq;
-
-                const lineNo = has(col.line) ? Number(stripCell(r[col.line])) || seq : seq;
-                const kor  = has(col.kor) ? stripCell(r[col.kor]) : "";
-                const zh   = has(col.zh)  ? stripCell(r[col.zh])  : "";
-
-                (song.__importLyrics ||= []).push({ line: lineNo, kor, zh });
-                song.__touchedLyrics = true;
-              }
-
-              // 單字
-              if (has(col.word)) {
-                const w = stripCell(r[col.word]);
-                const z = has(col.zh) ? stripCell(r[col.zh]) : "";
-                if (w) {
-                  (song.__importVocab ||= []).push({ word: w, zh: z });
-                  song.__touchedVocab = true;
-                }
-              }
-
-              // 文法
-              if (has(col.pattern)) {
-                const p = stripCell(r[col.pattern]);
-                const e = has(col.explain) ? stripCell(r[col.explain]) : "";
-                const ex= has(col.example) ? stripCell(r[col.example]) : "";
-                if (p) {
-                  (song.__importGrammar ||= []).push({ pattern: p, explain: e, example: ex });
-                  song.__touchedGrammar = true;
-                }
-              }
-            }
-
-            // 收斂寫回
-            for (const a of next) {
-              for (let i=0;i<a.songs.length;i++) {
-                const s = a.songs[i] as Song & {
-                  __importLyrics?: { line:number; kor:string; zh:string }[];
-                  __importVocab?: { word:string; zh:string }[];
-                  __importGrammar?: { pattern:string; explain:string; example:string }[];
-                  __touchedLyrics?: boolean;
-                  __touchedVocab?: boolean;
-                  __touchedGrammar?: boolean;
-                };
-                if (s.__touchedLyrics && s.__importLyrics) {
-                  const withId = s.__importLyrics.sort((x,y)=>x.line - y.line)
-                    .map(x => ({ id: uid(), kor: x.kor, zh: x.zh } as LyricLine));
-                  s.lyrics = trimLyricsTail<LyricLine>(withId);
-                  delete s.__importLyrics; delete s.__touchedLyrics;
-                }
-                if (s.__touchedVocab && s.__importVocab) {
-                  s.vocab = s.__importVocab.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
-                  delete s.__importVocab; delete s.__touchedVocab;
-                }
-                if (s.__touchedGrammar && s.__importGrammar) {
-                  s.grammar = s.__importGrammar.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
-                  delete s.__importGrammar; delete s.__touchedGrammar;
-                }
-              }
-            }
-
-            alert("已依統一表格完成匯入（專輯/歌曲/作詞作曲/歌詞/單字/文法）");
-            return { ...d, albums: next };
-          });
-          return;
-        }
-
-        // ====== 舊：專輯 ======
-        if (kindAlbums) {
-          const iTitle = col.albumTitle;
-          setData(d => {
-            const byTitle: Record<string, Album> = {};
-            d.albums.forEach(a => { byTitle[a.title.toLowerCase()] = { ...a, songs: [...a.songs] }; });
-
-            const ordered: Album[] = [];
-            for (const r of body) {
-              const title = stripCell(r[iTitle] || "");
-              if (!title) continue;
-              const key = title.toLowerCase();
-              const date = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
-              const cov  = has(col.cover) ? stripCell(r[col.cover]) : "";
-
-              const prev = byTitle[key];
-              const item: Album = prev
-                ? { ...prev, title: title, releaseDate: date || prev.releaseDate, cover: cov || prev.cover }
-                : { id: uid(), title, releaseDate: date || today(), cover: cov, songs: [] };
-
-              byTitle[key] = item;
-              ordered.push(item);
-            }
-            // 未出現在檔案的舊專輯排後面
-            const rest = d.albums.filter(a => !ordered.find(x => x.id === a.id));
-            alert(`已匯入專輯（含排序）：${ordered.length} 筆`);
-            return { ...d, albums: [...ordered, ...rest] };
-          });
-          return;
-        }
-
-        // ====== 舊：歌曲 ======
-        if (kindSongs) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle;
-          setData(d => {
-            let ok = 0, skip = 0;
-            const albums = [...d.albums];
-            for (const r of body) {
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              if (!aTitle || !sTitle) { skip++; continue; }
-              const date   = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
-              const lyr    = has(col.lyricist) ? stripCell(r[col.lyricist]) : "";
-              const comp   = has(col.composer) ? stripCell(r[col.composer]) : "";
-
-              let ai = albums.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { // 自動建立專輯
-                albums.push({ id: uid(), title: aTitle, releaseDate: date || today(), cover: "", songs: [] });
-                ai = albums.length - 1;
-              }
-              const exists = albums[ai].songs.find(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (exists) {
-                exists.title = sTitle; if (date) exists.releaseDate = date;
-                if (lyr) exists.lyricist = lyr;
-                if (comp) exists.composer = comp;
-              } else {
-                albums[ai].songs.push({ id: uid(), title: sTitle, releaseDate: date, lyricist: lyr, composer: comp, lyrics: [], vocab: [], grammar: [] });
-              }
-              ok++;
-            }
-            alert(`已匯入歌曲：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums };
-          });
-          return;
-        }
-
-        // ====== 舊：歌詞 ======
-        if (kindLyrics) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle;
-          setData(d => {
-            let ok = 0, skip = 0, rowNo = 0;
-            const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-
-            for (const r of body) {
-              rowNo++;
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              if (!aTitle || !sTitle) { skip++; continue; }
-
-              let ai = next.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { // 自動建立專輯
-                next.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] });
-                ai = next.length - 1;
-              }
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (si < 0) { // 自動建立歌曲
-                next[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] });
-                si = next[ai].songs.length - 1;
-              }
-
-              const line = has(col.line) ? Number(stripCell(r[col.line])) || rowNo : rowNo;
-              const kor  = has(col.kor) ? stripCell(r[col.kor]) : "";
-              const zh   = has(col.zh)  ? stripCell(r[col.zh])  : "";
-
-              const s = next[ai].songs[si] as Song & { __importLyrics?: { line:number; kor:string; zh:string }[] };
-              (s.__importLyrics ||= []).push({ line, kor, zh });
-              ok++;
-            }
-
-            for (const a of next) for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & { __importLyrics?: { line:number; kor:string; zh:string }[] };
               if (s.__importLyrics) {
-                const withId = s.__importLyrics.sort((x,y)=>x.line - y.line)
+                const withId = s.__importLyrics
+                  .sort((x,y)=> (x.line||0) - (y.line||0))
                   .map(x => ({ id: uid(), kor: x.kor, zh: x.zh } as LyricLine));
                 (s as Song).lyrics = trimLyricsTail<LyricLine>(withId);
                 delete s.__importLyrics;
               }
-            }
-
-            alert(`已匯入歌詞：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums: next };
-          });
-          return;
-        }
-
-        // ====== 舊：單字 ======
-        if (kindVocab) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle, iWord = col.word;
-          setData(d => {
-            let ok = 0, skip = 0;
-            const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-
-            for (const r of body) {
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              const word   = has(iWord) ? stripCell(r[iWord]) : "";
-              const zh     = has(col.zh) ? stripCell(r[col.zh]) : "";
-              if (!aTitle || !sTitle || !word) { skip++; continue; }
-
-              let ai = next.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { next.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] }); ai = next.length - 1; }
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (si < 0) { next[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] }); si = next[ai].songs.length - 1; }
-
-              const s = next[ai].songs[si] as Song & { __importVocab?: { word:string; zh:string }[] };
-              (s.__importVocab ||= []).push({ word, zh });
-              ok++;
-            }
-
-            for (const a of next) for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & { __importVocab?: { word:string; zh:string }[] };
               if (s.__importVocab) {
                 (s as Song).vocab = s.__importVocab.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
                 delete s.__importVocab;
               }
-            }
-
-            alert(`已匯入單字：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums: next };
-          });
-          return;
-        }
-
-        // ====== 舊：文法 ======
-        if (kindGrammar) {
-          const iAlbum = col.albumTitle, iSong = col.songTitle, iPat = col.pattern;
-          setData(d => {
-            let ok = 0, skip = 0;
-            const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-
-            for (const r of body) {
-              const aTitle = stripCell(r[iAlbum]||"");
-              const sTitle = stripCell(r[iSong ]||"");
-              const pattern = has(iPat) ? stripCell(r[iPat]) : "";
-              const explain = has(col.explain) ? stripCell(r[col.explain]) : "";
-              const example = has(col.example) ? stripCell(r[col.example]) : "";
-              if (!aTitle || !sTitle || !pattern) { skip++; continue; }
-
-              let ai = next.findIndex(a => a.title.toLowerCase() === aTitle.toLowerCase());
-              if (ai < 0) { next.push({ id: uid(), title: aTitle, releaseDate: today(), cover: "", songs: [] }); ai = next.length - 1; }
-              let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === sTitle.toLowerCase());
-              if (si < 0) { next[ai].songs.push({ id: uid(), title: sTitle, releaseDate: "", lyricist:"", composer:"", lyrics: [], vocab: [], grammar: [] }); si = next[ai].songs.length - 1; }
-
-              const s = next[ai].songs[si] as Song & { __importGrammar?: { pattern:string; explain:string; example:string }[] };
-              (s.__importGrammar ||= []).push({ pattern, explain, example });
-              ok++;
-            }
-
-            for (const a of next) for (let i=0;i<a.songs.length;i++) {
-              const s = a.songs[i] as Song & { __importGrammar?: { pattern:string; explain:string; example:string }[] };
               if (s.__importGrammar) {
                 (s as Song).grammar = s.__importGrammar.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
                 delete s.__importGrammar;
               }
             }
+          }
 
-            alert(`已匯入文法：成功 ${ok}，略過 ${skip}`);
-            return { ...d, albums: next };
-          });
-          return;
-        }
+          alert(`已匯入（單一檔）：成功 ${ok}，略過 ${skip}`);
+          return { ...d, albums };
+        });
 
       } catch (e) {
         console.error(e);
@@ -1249,41 +973,37 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }
 
-  // 匯出/匯入選單
-  const CSVMenu = (
+  // 匯出/匯入選單（單一檔為主；保留分檔匯出）
+  const IOMenu = (
     <>
-      <div className="px-3 py-1 text-xs text-zinc-500">匯出（TXT / UTF-8 BOM, TSV）</div>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsTXT}>專輯（含排序）</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsTXT}>歌曲清單（含作詞/作曲）</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsTXTAll}>歌詞</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabTXTAll}>單字</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarTXTAll}>文法</button>
-      <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">下載範本（TXT / TSV）</div>
-      <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("unified")}>統一範本（建議）</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("songs")}>歌曲</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("lyrics")}>歌詞</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("vocab")}>單字</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("grammar")}>文法</button>
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("albums")}>專輯</button>
-      </div>
-      <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">匯入（TXT/TSV/CSV）</div>
-      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
-        選擇檔案
-        <input type="file" className="hidden" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values,text/csv" onChange={e=>{ const f=e.target.files?.[0]; if (f) importCSV(f); }}/>
+      <div className="px-3 py-1 text-xs text-zinc-500">整包（單一檔）</div>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={exportAllTXT}>匯出全部（all-in-one.txt）</button>
+      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-[var(--soft)]/30">
+        匯入全部（TXT/TSV/CSV）
+        <input type="file" className="hidden" accept=".txt,.tsv,.csv,text/plain,text/tab-separated-values,text/csv" onChange={e=>{ const f=e.target.files?.[0]; if (f) importALL(f); }}/>
       </label>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={downloadAllTemplate}>下載整包範本</button>
+
+      <div className="my-1 border-[var(--soft)]-t" />
+
+      <div className="px-3 py-1 text-xs text-zinc-500">（可選）分檔匯出</div>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={exportAlbumsTXT}>專輯（含排序）</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={exportSongsTXT}>歌曲清單</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={exportLyricsTXTAll}>歌詞</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={exportVocabTXTAll}>單字</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={exportGrammarTXTAll}>文法</button>
+
       <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
-        建議使用<b>統一範本</b>：必填 <b>albumTitle, songTitle</b>；其餘欄位可選（作詞、作曲、歌詞、單字、文法…）。
+        單一檔表頭（至少要有 <b>albumTitle, songTitle</b>）：<br/>
+        albumTitle, songTitle, albumReleaseDate, cover, songReleaseDate, lyricist, composer, line, kor, zh, word, pattern, explain, example
       </div>
     </>
   );
 
   const NewMenu = (
     <>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={()=>setModal({ type: 'song', albumId: current?.album.id })}>新增歌曲</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={()=>setModal({ type: 'album' })}>新增專輯</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={()=>setModal({ type: 'song', albumId: current?.album.id })}>新增歌曲</button>
+      <button className="block w-full px-3 py-1 text-left hover:bg-[var(--soft)]/30" onClick={()=>setModal({ type: 'album' })}>新增專輯</button>
     </>
   );
 
@@ -1291,18 +1011,21 @@ export default function App() {
   const [modal, setModal] = useState<{ type: null | 'album' | 'song'; albumId?: string }>({ type: null });
 
   return (
-    <div className="min-h-screen bg-amber-50/40 text-gray-900">
+      <div
+        className="min-h-screen bg-amber-50/40 text-gray-900"
+        style={{ ['--soft' as any]: '#E8DFC1' }}
+      >
       {/* Top Bar */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
+      <header className="sticky top-0 z-40 border-[var(--soft)]-b border-[var(--soft)]-[var(--soft)] bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1280px] px-4">
           <div className="flex flex-nowrap items-center gap-2 py-3">
-            <button className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5" title="切換側邊選單" onClick={() => {
+            <button className="shrink-0 rounded-lg border-[var(--soft)] px-2 py-1 text-sm hover:bg-[var(--soft)]/30" title="切換側邊選單" onClick={() => {
               if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar(); else setDrawerOpen(true);
             }}>{HAMBURGER} 選單</button>
             <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">DAY6 歌詞學韓文</div>
             <div className="relative ml-auto flex flex-nowrap items-center gap-2">
-              <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72" />
-              <DropMenu label="匯入 / 匯出" items={CSVMenu} />
+              <input placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法" value={query} onChange={e=>setQuery(e.target.value)} className="w-[52vw] max-w-[420px] rounded-xl border-[var(--soft)] px-3 py-1.5 text-sm outline-none focus:ring md:w-72" />
+              <DropMenu label="匯入 / 匯出" items={IOMenu} />
               <DropMenu label="新增" items={NewMenu} />
             </div>
           </div>
@@ -1313,7 +1036,7 @@ export default function App() {
       <div className="mx-auto max-w-[1280px] px-4 py-6">
         <div className="md:flex md:gap-4">
           {sidebarVisible && (
-            <div className="rounded-xl border bg-white/70 md:w-[317px] md:shrink-0">
+            <div className="rounded-xl border-[var(--soft)] bg-white/70 md:w-[317px] md:shrink-0">
               <DesktopSidebar
                 data={data}
                 selected={selected}
@@ -1381,6 +1104,9 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
     return { album, song };
   }, [data, selected]);
 
+  const [infoEdit, setInfoEdit] = useState(false);
+  useEffect(()=>{ setInfoEdit(false); }, [current?.song.id]);
+
   return (
     <div className="min-w-0 flex-1">
       {current ? (
@@ -1391,27 +1117,26 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
                 title={current.song.title}
                 onSave={(nextTitle)=>{ updateSong(current.song.id, { title: nextTitle }); }}
               />
-              <div className="text-xs text-zinc-500">{current.album.title} • {current.song.releaseDate || current.album.releaseDate}</div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-                <MetaEditable
-                  label="作詞"
-                  value={current.song.lyricist}
-                  placeholder="填入作詞"
-                  onSave={(v)=>updateSong(current.song.id, { lyricist: v })}
-                />
-                <MetaEditable
-                  label="作曲"
-                  value={current.song.composer}
-                  placeholder="填入作曲"
-                  onSave={(v)=>updateSong(current.song.id, { composer: v })}
-                />
-              </div>
+              {!infoEdit ? (
+                <div className="mt-1 text-xs text-zinc-600">
+                  <div className="truncate">作詞：{current.song.lyricist || <span className="text-zinc-400">（未填）</span>}</div>
+                  <div className="truncate">作曲：{current.song.composer || <span className="text-zinc-400">（未填）</span>}</div>
+                  <div className="truncate">發佈日：{current.song.releaseDate || current.album.releaseDate}</div>
+                </div>
+              ) : (
+                <div className="mt-2 grid grid-cols-12 gap-2">
+                  <input defaultValue={current.song.lyricist||""} onChange={(e)=>updateSong(current.song.id,{ lyricist: e.target.value })} placeholder="作詞" className="col-span-12 md:col-span-4 rounded-lg border-[var(--soft)] px-2 py-1 text-sm"/>
+                  <input defaultValue={current.song.composer||""} onChange={(e)=>updateSong(current.song.id,{ composer: e.target.value })} placeholder="作曲" className="col-span-12 md:col-span-4 rounded-lg border-[var(--soft)] px-2 py-1 text-sm"/>
+                  <input type="date" defaultValue={current.song.releaseDate||""} onChange={(e)=>updateSong(current.song.id,{ releaseDate: e.target.value })} placeholder="發佈日（可空）" className="col-span-12 md:col-span-4 rounded-lg border-[var(--soft)] px-2 py-1 text-sm"/>
+                </div>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>歌詞</TabButton>
               <TabButton active={tab==='vocab'}  onClick={()=>setTab('vocab')}>單字表</TabButton>
               <TabButton active={tab==='flash'}  onClick={()=>setTab('flash')}>單字卡</TabButton>
               <TabButton active={tab==='grammar'} onClick={()=>setTab('grammar')}>文法</TabButton>
+              <ToolbarButton onClick={()=>setInfoEdit(v=>!v)}>{infoEdit?'完成資訊':'編輯資訊'}</ToolbarButton>
             </div>
           </div>
 
@@ -1421,7 +1146,7 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
           {tab==='grammar' && <GrammarPanel  song={current.song} onUpdate={(p)=>updateSong(current.song.id, p)} />}
         </div>
       ) : (
-        <div className="rounded-2xl border bg-white/70 p-6 text-zinc-500">請在左側選擇或新增一首歌曲</div>
+        <div className="rounded-2xl border-[var(--soft)] bg-white/70 p-6 text-zinc-500">請在左側選擇或新增一首歌曲</div>
       )}
     </div>
   );
@@ -1447,23 +1172,23 @@ function AddAlbumModal({ open, onClose, onSubmit }: { open: boolean; onClose: ()
       >
         <div>
           <div className="mb-1 text-xs text-zinc-500">專輯名稱</div>
-          <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2" placeholder="例如：The Book of Us"/>
+          <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2" placeholder="例如：The Book of Us"/>
         </div>
         <div>
           <div className="mb-1 text-xs text-zinc-500">發佈日期</div>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2"/>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2"/>
         </div>
         <div>
           <div className="mb-1 text-xs text-zinc-500">封面圖片（可選）</div>
           <div className="flex items-center gap-3">
-            <label className="cursor-pointer rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5">
+            <label className="cursor-pointer rounded-lg border-[var(--soft)] px-3 py-1.5 text-sm hover:bg-[var(--soft)]/30">
               選擇圖片
               <input type="file" accept="image/*" className="hidden" onChange={e=>onPickFile(e.target.files?.[0])}/>
             </label>
-            <div className="h-16 w-16 overflow-hidden rounded-lg border bg-white/60">
+            <div className="h-16 w-16 overflow-hidden rounded-lg border-[var(--soft)] bg-white/60">
               {cover ? <img src={cover} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">預覽</div>}
             </div>
-            {cover && <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>setCover(undefined)}>清除</button>}
+            {cover && <button type="button" className="rounded-lg border-[var(--soft)] px-2 py-1 text-xs hover:bg-[var(--soft)]/30" onClick={()=>setCover(undefined)}>清除</button>}
           </div>
         </div>
         <div className="flex justify-end gap-2"><ToolbarButton onClick={onClose}>取消</ToolbarButton><ToolbarButton type="submit">新增</ToolbarButton></div>
@@ -1481,61 +1206,100 @@ function AddSongModal({ open, onClose, onSubmit, albums, defaultAlbumId }: {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [lyricist, setLyricist] = useState("");
-  const [composer, setComposer] = useState("");
+  const [composer , setComposer ] = useState("");
   const [kor, setKor] = useState("");
   const [zh , setZh ] = useState("");
 
-  useEffect(()=>{ if (open) {
-    setAlbumId(defaultAlbumId || albums[0]?.id || "");
-    setTitle(""); setDate(""); setLyricist(""); setComposer(""); setKor(""); setZh("");
-  } }, [open, defaultAlbumId, albums.length]);
+  useEffect(()=>{ if (open) { setAlbumId(defaultAlbumId || albums[0]?.id || ""); setTitle(""); setDate(""); setLyricist(""); setComposer(""); setKor(""); setZh(""); } }, [open, defaultAlbumId, albums.length]);
 
   return (
     <Modal open={open} onClose={onClose} title="新增歌曲">
-      <form
-        onSubmit={(e)=>{ e.preventDefault(); if (!albumId || !title.trim()) return; onSubmit({ albumId, title: title.trim(), releaseDate: date, lyricist, composer, kor, zh }); }}
-        className="space-y-3"
-      >
+      <form onSubmit={(e)=>{ e.preventDefault(); if (!albumId || !title.trim()) return; onSubmit({ albumId, title: title.trim(), releaseDate: date, lyricist, composer, kor, zh }); }} className="space-y-3">
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">選擇專輯</div>
-            <select value={albumId} onChange={e=>setAlbumId(e.target.value)} className="w-full rounded-lg border px-3 py-2">
+            <select value={albumId} onChange={e=>setAlbumId(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2">
               {albums.map(a => (<option key={a.id} value={a.id}>{a.title}（{a.releaseDate}）</option>))}
             </select>
           </div>
           <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">發佈日（可空）</div>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2"/>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2"/>
           </div>
+        </div>
+
+        <div>
+          <div className="mb-1 text-xs text-zinc-500">歌名</div>
+          <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2" placeholder="例如：Congratulations"/>
         </div>
 
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
-            <div className="mb-1 text-xs text-zinc-500">歌名</div>
-            <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full rounded-lg border px-3 py-2" placeholder="例如：Congratulations"/>
-          </div>
-          <div className="col-span-12 md:col-span-3">
             <div className="mb-1 text-xs text-zinc-500">作詞（可空）</div>
-            <input value={lyricist} onChange={e=>setLyricist(e.target.value)} className="w-full rounded-lg border px-3 py-2" placeholder="作詞人"/>
+            <input value={lyricist} onChange={e=>setLyricist(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2" />
           </div>
-          <div className="col-span-12 md:col-span-3">
+          <div className="col-span-12 md:col-span-6">
             <div className="mb-1 text-xs text-zinc-500">作曲（可空）</div>
-            <input value={composer} onChange={e=>setComposer(e.target.value)} className="w-full rounded-lg border px-3 py-2" placeholder="作曲人"/>
+            <input value={composer} onChange={e=>setComposer(e.target.value)} className="w-full rounded-lg border-[var(--soft)] px-3 py-2" />
           </div>
         </div>
 
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
-            <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句）</div>
-            <textarea value={kor} onChange={e=>setKor(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2"/>
+            <div className="mb-1 text-xs text-zinc-500">韓文歌詞（每行一句；可空）</div>
+            <textarea value={kor} onChange={e=>setKor(e.target.value)} className="h-40 w-full rounded-lg border-[var(--soft)] px-3 py-2"/>
           </div>
           <div className="col-span-12 md:col-span-6">
-            <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句）</div>
-            <textarea value={zh} onChange={e=>setZh(e.target.value)} className="h-40 w-full rounded-lg border px-3 py-2"/>
+            <div className="mb-1 text-xs text-zinc-500">中文歌詞（每行一句；可空）</div>
+            <textarea value={zh} onChange={e=>setZh(e.target.value)} className="h-40 w-full rounded-lg border-[var(--soft)] px-3 py-2"/>
           </div>
         </div>
+
         <div className="flex justify-end gap-2"><ToolbarButton onClick={onClose}>取消</ToolbarButton><ToolbarButton type="submit">新增</ToolbarButton></div>
       </form>
     </Modal>
+  );
+}
+
+/* ====== FlashcardPanel（放最後以便使用到 tokenizeKorean） ====== */
+function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
+  const vocab = song.vocab;
+  const [queue, setQueue] = useState<number[]>(() => vocab.map((_, i) => i));
+  const [meta, setMeta] = useState(() => vocab.map(() => ({ firstSeen: false } as { firstSeen: boolean })));
+  const [reveal, setReveal] = useState(false);
+  useEffect(()=>{ setQueue(vocab.map((_,i)=>i)); setMeta(vocab.map(()=>({firstSeen:false}))); setReveal(false); }, [vocab.map(v=>v.id).join(',')]);
+  const total = vocab.length; const currentIdx = queue[0] ?? null; const current = currentIdx != null ? vocab[currentIdx] : null; const firstSeenCount = meta.filter(m => m.firstSeen).length;
+  function grade(level: 'again' | 'good' | 'easy') {
+    if (currentIdx == null) return;
+    setMeta(m => { const next = [...m]; if (!next[currentIdx].firstSeen) next[currentIdx].firstSeen = true; return next; });
+    setQueue(q => { const rest = q.slice(1); if (level === 'again') { const insertAt = Math.min(2, rest.length); return [...rest.slice(0, insertAt), currentIdx, ...rest.slice(insertAt)]; } if (level === 'good') return [...rest, currentIdx]; return rest; });
+  }
+  if (total === 0) return (
+    <div className="rounded-2xl border-[var(--soft)] bg-white/70 p-6 text-center">
+      <div className="mb-2 text-sm">尚無單字</div>
+      <ToolbarButton onClick={()=>{
+        const toks = Array.from(new Set(tokenizeKorean(song.lyrics.map(l=>l.kor).join('\n'))));
+        onUpdate({ vocab: toks.map(t => ({ id: uid(), word: t, zh: '' })) });
+      }}>從歌詞自動擷取</ToolbarButton>
+    </div>
+  );
+  if (current == null) return (
+    <div className="rounded-2xl border-[var(--soft)] bg-white/70 p-6 text-center">
+      <div className="mb-2 text-sm">本輪完成！</div>
+      <ToolbarButton onClick={() => { setQueue(vocab.map((_, i) => i)); setMeta(vocab.map(() => ({ firstSeen: false }))); }}>重新開始</ToolbarButton>
+    </div>
+  );
+  return (
+    <div className="rounded-2xl border-[var(--soft)] bg-white/70 p-6 text-center">
+      <div className="mb-2 text-xs text-zinc-500">單字卡　已看過：{firstSeenCount}/{total}</div>
+      <div className="text-2xl font-bold">{current.word}</div>
+      <div className="mt-2 text-lg text-zinc-700">{reveal ? (current.zh||'（尚未填中文）') : '———'}</div>
+      <div className="mt-4 flex flex-wrap justify-center gap-2"><ToolbarButton onClick={()=>setReveal(r=>!r)}>{reveal?'隱藏':'顯示解答'}</ToolbarButton></div>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <button onClick={()=>grade('again')} className="rounded-lg border-[var(--soft)] px-3 py-2 text-sm hover:bg-[var(--soft)]/30">不熟</button>
+        <button onClick={()=>grade('good')}  className="rounded-lg border-[var(--soft)] px-3 py-2 text-sm hover:bg-[var(--soft)]/30">一般</button>
+        <button onClick={()=>grade('easy')}  className="rounded-lg border-[var(--soft)] px-3 py-2 text-sm hover:bg-[var(--soft)]/30">很熟</button>
+      </div>
+    </div>
   );
 }
