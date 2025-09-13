@@ -84,6 +84,33 @@ function fileToDataURL(file: File): Promise<string> {
   return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result||"")); fr.readAsDataURL(file); });
 }
 
+// ---- CSV 匯入用工具（新增） ----
+const BOM = "\uFEFF";
+const normalizeHeader = (s: string) =>
+  (s || "")
+    .replace(BOM, "")
+    .replace(/[\s_\-（）()]/g, "")        // 移除空白/底線/連字號/括號
+    .toLowerCase();
+
+const stripCell = (s: string) => (s || "").replace(BOM, "").trim();
+
+function idxOfAny(H: string[], aliases: string[]) {
+  for (const a of aliases) {
+    const i = H.indexOf(a);
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+function findSongIdByAlbumAndTitle(data: AppData, albumName: string, songTitle: string) {
+  const an = stripCell(albumName).toLowerCase();
+  const sn = stripCell(songTitle).toLowerCase();
+  if (!an || !sn) return "";
+  const album = data.albums.find(a => stripCell(a.title).toLowerCase() === an);
+  const song  = album?.songs.find(s => stripCell(s.title).toLowerCase() === sn);
+  return song?.id || "";
+}
+
 /* ===================== Seed ===================== */
 const SEED: AppData = {
   artist: "DAY6",
@@ -827,183 +854,240 @@ export default function App() {
   }
   // 匯入
   function importCSV(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const text = String(reader.result||"");
-        const rows = parseCSV(text);
-        if (!rows.length) return alert("找不到資料列");
-        const header = rows[0].map(h=>h.trim().toLowerCase());
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const text = String(reader.result || "");
+      const rows = parseCSV(text);
+      if (!rows.length) { alert("找不到資料列"); return; }
 
-        // 判斷種類
-        const isAlbums = header.join(",") === "albumid,title,releaseDate".toLowerCase() || header.includes("albumid") && header.includes("title") && header.includes("releasedate");
-        const isSongs  = header.includes("albumid") && header.includes("title") && header.includes("songid");
-        const isLyrics = header.includes("songid") && header.includes("line") && header.includes("kor") && header.includes("zh");
-        // 將表頭做「去空白、小寫」正規化
-        const H = header.map(h => h.replace(/\s+/g, '').toLowerCase());
-        const idxOf = (keys: string[]) => { for (const k of keys) { const i = H.indexOf(k); if (i >= 0) return i; } return -1; };
+      // 標頭正規化
+      const rawHeader = rows[0].map(c => stripCell(c));
+      const H = rawHeader.map(normalizeHeader);
 
-        // 支援多語表頭
-        const idxSongId     = idxOf(["songid"]);
-        const idxAlbumTitle = idxOf(["album","albumtitle","專輯","專輯名稱"]);
-        const idxSongTitle  = idxOf(["song","songtitle","title","歌曲","歌名"]);
-        const idxWord       = idxOf(["word","korean","kr","han","韓文","單字"]);
-        const idxZhCol      = idxOf(["zh","chinese","cn","中文","翻譯","釋義"]);
+      // 欄位索引（支援中英別名）
+      const col = {
+        albumId:      idxOfAny(H, ["albumid"]),
+        albumTitle:   idxOfAny(H, ["album","albumtitle","專輯","專輯名稱","專輯名"]),
+        songId:       idxOfAny(H, ["songid"]),
+        songTitle:    idxOfAny(H, ["song","songtitle","title","歌曲","歌名"]),
+        releaseDate:  idxOfAny(H, ["releasedate","date","發佈日","發佈日期","發布日","發布日期"]),
+        cover:        idxOfAny(H, ["cover","封面","圖片","封面圖"]),
+        line:         idxOfAny(H, ["line","行","行號","序"]),
+        kor:          idxOfAny(H, ["kor","korean","kr","han","韓文"]),
+        zh:           idxOfAny(H, ["zh","chinese","cn","中文","翻譯","釋義"]),
+        word:         idxOfAny(H, ["word","koreanword","單字","詞"]),
+        pattern:      idxOfAny(H, ["pattern","文法","語法"]),
+        explain:      idxOfAny(H, ["explain","說明"]),
+        example:      idxOfAny(H, ["example","例句"]),
+      };
 
-        // 單字表判斷：有 word 欄位，且 (有 songId 或 有 專輯+歌曲)
-        const isVocab  = (idxWord >= 0) && (idxSongId >= 0 || (idxAlbumTitle >= 0 && idxSongTitle >= 0));
+      // 判斷檔案種類（鬆綁）
+      const has = (i: number) => i >= 0;
+      const kindAlbums  = has(col.albumTitle) && !has(col.songTitle) && !has(col.word) && !has(col.pattern);
+      const kindSongs   = (has(col.albumId) || has(col.albumTitle)) && has(col.songTitle) && !has(col.kor) && !has(col.word) && !has(col.pattern);
+      const kindLyrics  = (has(col.songId) || (has(col.albumTitle) && has(col.songTitle))) && has(col.kor) && has(col.zh);
+      const kindVocab   = has(col.word) && (has(col.songId) || (has(col.albumTitle) && has(col.songTitle)));
+      const kindGrammar = has(col.pattern) && (has(col.songId) || (has(col.albumTitle) && has(col.songTitle)));
 
+      if (!(kindAlbums || kindSongs || kindLyrics || kindVocab || kindGrammar)) {
+        alert(
+          "無法辨識的表頭。\n" +
+          "可接受的表頭範例：\n" +
+          "• 專輯：albumId, title, releaseDate, cover\n" +
+          "• 歌曲：albumId 或 專輯 + title(歌名), releaseDate\n" +
+          "• 歌詞：songId 或 (專輯+歌名) + line + kor + zh\n" +
+          "• 單字：songId 或 (專輯+歌名) + word + zh\n" +
+          "• 文法：songId 或 (專輯+歌名) + pattern + explain + example"
+        );
+        return;
+      }
 
-        if (isAlbums) {
-          // albums: albumId?, title, releaseDate, cover?
-          const idx = {
-            albumId: header.indexOf("albumid"),
-            title: header.indexOf("title"),
-            release: header.indexOf("releasedate"),
-            cover: header.indexOf("cover"),
-          };
-          const payload = rows.slice(1).filter(r=>r.length>1);
-          setData(d => {
-            const map: Record<string, Album> = {};
-            // 先把現有放進 map（利於覆蓋）
-            for (const a of d.albums) map[a.id] = { ...a, songs: [...a.songs] };
-            const order: Album[] = [];
-            for (const r of payload) {
-              const aid = (idx.albumId>=0 ? (r[idx.albumId]||"").trim() : "") || uid();
-              const title = (r[idx.title]||"").trim();
-              const releaseDate = (r[idx.release]||"").trim();
-              const cover = idx.cover>=0 ? (r[idx.cover]||"").trim() : "";
-              const exist = map[aid];
-              const album: Album = exist ? { ...exist, title: title||exist.title, releaseDate: releaseDate||exist.releaseDate, cover: cover||exist.cover } : { id: aid, title: title||"(未命名)", releaseDate: releaseDate||today(), cover, songs: [] };
-              map[aid] = album;
-              order.push(album);
-            }
-            // 以 CSV 順序重建（保留舊的但未出現在 CSV 的放在後面）
-            const rest = d.albums.filter(a => !order.find(x => x.id === a.id));
-            return { ...d, albums: [...order, ...rest] };
-          });
-          alert("已匯入專輯（含排序）");
-          return;
-        }
-        if (isSongs) {
-          // songs: albumId, songId?, title, releaseDate?
-          const idx = {
-            albumId: header.indexOf("albumid"),
-            songId: header.indexOf("songid"),
-            title: header.indexOf("title"),
-            release: header.indexOf("releasedate"),
-          };
-          const payload = rows.slice(1).filter(r=>r.length>1);
-          setData(d => {
-            const nextAlbums = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
-            for (const r of payload) {
-              const albumId = (r[idx.albumId]||"").trim();
-              const songId = idx.songId>=0 ? (r[idx.songId]||"").trim() : "";
-              const title = (r[idx.title]||"").trim();
-              const releaseDate = (idx.release>=0 ? (r[idx.release]||"").trim() : "");
-              const ai = nextAlbums.findIndex(a => a.id === albumId);
-              if (ai < 0) continue;
-              if (songId) {
-                const si = nextAlbums[ai].songs.findIndex(s => s.id === songId);
-                if (si >= 0) { nextAlbums[ai].songs[si] = { ...nextAlbums[ai].songs[si], title: title||nextAlbums[ai].songs[si].title, releaseDate: releaseDate||nextAlbums[ai].songs[si].releaseDate }; }
-                else nextAlbums[ai].songs.push({ id: songId, title: title||"(未命名)", releaseDate, lyrics: [], vocab: [], grammar: [] });
-              } else {
-                nextAlbums[ai].songs.push({ id: uid(), title: title||"(未命名)", releaseDate, lyrics: [], vocab: [], grammar: [] });
-              }
-            }
-            return { ...d, albums: nextAlbums };
-          });
-          alert("已匯入歌曲");
-          return;
-        }
-        if (isLyrics) {
-          // lyrics: songId, line, kor, zh
-          const idx = {
-            songId: header.indexOf("songid"),
-            line: header.indexOf("line"),
-            kor: header.indexOf("kor"),
-            zh: header.indexOf("zh"),
-          };
-          const grouped: Record<string, { line: number; kor: string; zh: string }[]> = {};
-          for (const r of rows.slice(1)) {
-            const sid = (r[idx.songId]||"").trim(); if (!sid) continue;
-            const line = Number(r[idx.line]||"0") || 0;
-            const kor = (r[idx.kor]||"").trim();
-            const zh  = (r[idx.zh ]||"").trim();
-            (grouped[sid] ||= []).push({ line, kor, zh });
-          }
-          setData(d => ({
-            ...d,
-            albums: d.albums.map(a => ({
-              ...a,
-              songs: a.songs.map(s => grouped[s.id]
-                ? { ...s, lyrics: grouped[s.id].sort((x,y)=>x.line-y.line).map(x => ({ id: uid(), kor: x.kor, zh: x.zh })) }
-                : s
-              )
-            }))
-          }));
-          alert("已匯入歌詞");
-          return;
-        }
+      const body = rows.slice(1); // 資料列
 
-        
-        if (isVocab) {
-        const payload = rows.slice(1).filter(r => r.length > 0);
-
+      if (kindAlbums) {
+        // albums: albumId?, title, releaseDate?, cover?
+        const iTitle = idxOfAny(H, ["title","專輯名稱","專輯","album","albumtitle"]);
         setData(d => {
-          const grouped: Record<string, { word: string; zh: string }[]> = {};
-          let matched = 0, skipped = 0;
+          const byId: Record<string, Album> = {};
+          d.albums.forEach(a => { byId[a.id] = { ...a, songs: [...a.songs] }; });
 
-          for (const r of payload) {
-            // 解析欄位
-            const sidRaw = idxSongId >= 0 ? (r[idxSongId] || "").trim() : "";
-            const albumName = idxAlbumTitle >= 0 ? (r[idxAlbumTitle] || "").trim() : "";
-            const songName  = idxSongTitle  >= 0 ? (r[idxSongTitle ] || "").trim() : "";
-            const word = (r[idxWord] || "").trim();
-            const zh   = idxZhCol >= 0 ? (r[idxZhCol] || "").trim() : "";
+          const ordered: Album[] = [];
+          for (const r of body) {
+            const id   = has(col.albumId) ? stripCell(r[col.albumId]) : "";
+            const aid  = id || uid();
+            const t    = stripCell(r[iTitle] || "");
+            const date = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
+            const cov  = has(col.cover) ? stripCell(r[col.cover]) : "";
 
-            if (!word) { skipped++; continue; }
+            const prev = byId[aid];
+            const item: Album = prev
+              ? { ...prev, title: t || prev.title, releaseDate: date || prev.releaseDate, cover: cov || prev.cover }
+              : { id: aid, title: t || "(未命名)", releaseDate: date || today(), cover: cov, songs: [] };
 
-            // 解析目標 songId：優先用 songId，否則用「專輯名+歌名」匹配
-            let sid = sidRaw;
-            if (!sid) {
-              const album = d.albums.find(a => a.title.trim() === albumName);
-              const song  = album?.songs.find(s => s.title.trim() === songName);
-              sid = song?.id || "";
+            byId[aid] = item;
+            ordered.push(item);
+          }
+          // 未列在 CSV 的舊專輯排在後面
+          const rest = d.albums.filter(a => !ordered.find(x => x.id === a.id));
+          alert(`已匯入專輯（含排序）：${ordered.length} 筆`);
+          return { ...d, albums: [...ordered, ...rest] };
+        });
+        return;
+      }
+
+      if (kindSongs) {
+        // songs: albumId 或 (albumTitle), songId(optional), title, releaseDate(optional)
+        const iTitle = idxOfAny(H, ["title","song","songtitle","歌名","歌曲"]);
+        setData(d => {
+          const next = d.albums.map(a => ({ ...a, songs: [...a.songs] }));
+          let ok = 0, skip = 0;
+          for (const r of body) {
+            const albumId  = has(col.albumId) ? stripCell(r[col.albumId]) : "";
+            const albumTit = has(col.albumTitle) ? stripCell(r[col.albumTitle]) : "";
+            const sidRaw   = has(col.songId) ? stripCell(r[col.songId]) : "";
+            const title    = stripCell(r[iTitle] || "");
+            const date     = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
+
+            // 找專輯
+            let ai = -1;
+            if (albumId) ai = next.findIndex(a => a.id === albumId);
+            if (ai < 0 && albumTit) ai = next.findIndex(a => stripCell(a.title).toLowerCase() === albumTit.toLowerCase());
+            if (ai < 0) { skip++; continue; }
+
+            if (sidRaw) {
+              const si = next[ai].songs.findIndex(s => s.id === sidRaw);
+              if (si >= 0) { next[ai].songs[si] = { ...next[ai].songs[si], title: title || next[ai].songs[si].title, releaseDate: date || next[ai].songs[si].releaseDate }; }
+              else { next[ai].songs.push({ id: sidRaw, title: title || "(未命名)", releaseDate: date, lyrics: [], vocab: [], grammar: [] }); }
+            } else {
+              next[ai].songs.push({ id: uid(), title: title || "(未命名)", releaseDate: date, lyrics: [], vocab: [], grammar: [] });
             }
+            ok++;
+          }
+          alert(`已匯入歌曲：成功 ${ok}，略過 ${skip}`);
+          return { ...d, albums: next };
+        });
+        return;
+      }
 
-            if (!sid) { skipped++; continue; }
-            (grouped[sid] ||= []).push({ word, zh });
-            matched++;
+      if (kindLyrics) {
+        // lyrics: songId 或 (albumTitle+songTitle), line(optional), kor, zh
+        setData(d => {
+          const grouped: Record<string, { line: number; kor: string; zh: string }[]> = {};
+          let ok = 0, skip = 0, rowNo = 0;
+
+          for (const r of body) {
+            rowNo++;
+            let sid = has(col.songId) ? stripCell(r[col.songId]) : "";
+            if (!sid && has(col.albumTitle) && has(col.songTitle)) {
+              sid = findSongIdByAlbumAndTitle(d, r[col.albumTitle], r[col.songTitle]);
+            }
+            if (!sid) { skip++; continue; }
+
+            const line = has(col.line) ? Number(stripCell(r[col.line])) || rowNo : rowNo;
+            const kor  = has(col.kor) ? stripCell(r[col.kor]) : "";
+            const zh   = has(col.zh)  ? stripCell(r[col.zh])  : "";
+            (grouped[sid] ||= []).push({ line, kor, zh });
+            ok++;
           }
 
           const next = {
             ...d,
             albums: d.albums.map(a => ({
               ...a,
-              songs: a.songs.map(s => grouped[s.id]
-                ? { ...s, vocab: grouped[s.id].map(x => ({ id: uid(), word: x.word, zh: x.zh })) } // 覆寫該歌單字表
-                : s
-              )
+              songs: a.songs.map(s => {
+                const pack = grouped[s.id];
+                if (!pack) return s;
+                const sorted = pack.sort((x,y)=>x.line - y.line)
+                                   .map(x => ({ id: uid(), kor: x.kor, zh: x.zh }));
+                // 裁掉尾端全空白行（沿用你前面加過的工具 trimLyricsTail）
+                return { ...s, lyrics: trimLyricsTail(sorted) };
+              })
             }))
           };
-
-          // 提示結果（可移除）
-          alert(`已匯入單字：${matched} 筆；找不到歌曲：${skipped} 行`);
+          alert(`已匯入歌詞：成功 ${ok}，略過 ${skip}`);
           return next;
         });
-
         return;
       }
 
+      if (kindVocab) {
+        // vocab: songId 或 (albumTitle+songTitle), word, zh(optional)
+        setData(d => {
+          const grouped: Record<string, { word: string; zh: string }[]> = {};
+          let ok = 0, skip = 0;
 
-        alert("無法辨識的 CSV 表頭，請先下載範本查看欄位。");
-      } catch (e) {
-        alert("CSV 解析失敗");
+          for (const r of body) {
+            let sid = has(col.songId) ? stripCell(r[col.songId]) : "";
+            if (!sid && has(col.albumTitle) && has(col.songTitle)) {
+              sid = findSongIdByAlbumAndTitle(d, r[col.albumTitle], r[col.songTitle]);
+            }
+            const word = has(col.word) ? stripCell(r[col.word]) : "";
+            const zh   = has(col.zh)   ? stripCell(r[col.zh])   : "";
+            if (!sid || !word) { skip++; continue; }
+            (grouped[sid] ||= []).push({ word, zh });
+            ok++;
+          }
+
+          const next = {
+            ...d,
+            albums: d.albums.map(a => ({
+              ...a,
+              songs: a.songs.map(s =>
+                grouped[s.id]
+                  ? { ...s, vocab: grouped[s.id].map(x => ({ id: uid(), word: x.word, zh: x.zh })) }
+                  : s
+              )
+            }))
+          };
+          alert(`已匯入單字：成功 ${ok}，略過 ${skip}`);
+          return next;
+        });
+        return;
       }
-    };
-    reader.readAsText(file);
-  }
+
+      if (kindGrammar) {
+        // grammar: songId 或 (albumTitle+songTitle), pattern, explain(optional), example(optional)
+        setData(d => {
+          const grouped: Record<string, { pattern: string; explain: string; example: string }[]> = {};
+          let ok = 0, skip = 0;
+
+          for (const r of body) {
+            let sid = has(col.songId) ? stripCell(r[col.songId]) : "";
+            if (!sid && has(col.albumTitle) && has(col.songTitle)) {
+              sid = findSongIdByAlbumAndTitle(d, r[col.albumTitle], r[col.songTitle]);
+            }
+            const pattern = has(col.pattern) ? stripCell(r[col.pattern]) : "";
+            const explain = has(col.explain) ? stripCell(r[col.explain]) : "";
+            const example = has(col.example) ? stripCell(r[col.example]) : "";
+            if (!sid || !pattern) { skip++; continue; }
+            (grouped[sid] ||= []).push({ pattern, explain, example });
+            ok++;
+          }
+
+          const next = {
+            ...d,
+            albums: d.albums.map(a => ({
+              ...a,
+              songs: a.songs.map(s =>
+                grouped[s.id]
+                  ? { ...s, grammar: grouped[s.id].map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example })) }
+                  : s
+              )
+            }))
+          };
+          alert(`已匯入文法：成功 ${ok}，略過 ${skip}`);
+          return next;
+        });
+        return;
+      }
+
+    } catch (e) {
+      alert("CSV 解析或匯入失敗");
+    }
+  };
+  reader.readAsText(file);
+}
 
   // 匯出/匯入選單（CSV）
   const CSVMenu = (
