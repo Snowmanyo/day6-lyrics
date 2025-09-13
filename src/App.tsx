@@ -51,16 +51,7 @@ function tokenizeKorean(text: string) {
     .filter(Boolean)
     .filter(isHangul);
 }
-function toCSV(rows: (string | number | null | undefined)[][]) {
-  return rows.map(r =>
-    r.map(c => {
-      const s = String(c ?? "");
-      const needQuote = /[",\n]/.test(s);
-      const escaped = s.replace(/"/g, '""');
-      return needQuote ? `"${escaped}"` : escaped;
-    }).join(",")
-  ).join("\n");
-}
+
 function toTSV(rows: (string | number | null | undefined)[][]) {
   return rows.map(r => r.map(c => String(c ?? "")).join("\t")).join("\n");
 }
