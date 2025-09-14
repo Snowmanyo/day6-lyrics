@@ -1,6 +1,40 @@
 // src/App.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+// === Soft Beige Border Theme (全站淡土黃邊框/hover 覆蓋) ===
+const __SOFT_BORDER_CSS__ = `
+:root{
+  --soft-border-color: #E9DFC9;              /* 淡土黃，和 bg-amber-50/40 很接近 */
+  --soft-hover-bg: rgba(233,223,201,0.35);   /* 同系色系的 hover 底 */
+}
+
+/* 只改顏色，不改寬度/圓角：覆蓋所有使用 Tailwind 邊框的元素 */
+.border, .border-t, .border-b, .border-l, .border-r {
+  border-color: var(--soft-border-color) !important;
+}
+
+/* 把原本灰黑系 hover 底，改成淡土黃透明 */
+.hover\\:bg-black\\/5:hover { background-color: var(--soft-hover-bg) !important; }
+.bg-black\\/5               { background-color: var(--soft-hover-bg) !important; }
+
+/* 假如有 dark: 邊框色（少數情境），一併柔化處理 */
+.dark\\:border-zinc-700, .dark\\:border-zinc-800 {
+  --tw-border-opacity: 1 !important;
+  border-color: var(--soft-border-color) !important;
+}
+`;
+
+// 將上面的 CSS 動態注入 <head>（載入一次即可）
+if (typeof document !== 'undefined') {
+  const THEME_ID = 'soft-border-theme';
+  if (!document.getElementById(THEME_ID)) {
+    const style = document.createElement('style');
+    style.id = THEME_ID;
+    style.textContent = __SOFT_BORDER_CSS__;
+    document.head.appendChild(style);
+  }
+}
+
 /* ===================== Types ===================== */
 type LyricLine = { id: string; kor: string; zh: string };
 type VocabItem = { id: string; word: string; zh?: string };
@@ -270,7 +304,7 @@ function DesktopSidebar({
                       <div className="flex min-w-0 items-center gap-2">
                         <button
                           onClick={()=>onToggleCollapse(a.id)}
-                          className="shrink-0 rounded-md border px-1.5 py-1 text-xs hover:bg黑/5"
+                          className="shrink-0 rounded-md border px-1.5 py-1 text-xs hover:bg-black/5"
                           title="收合/展開"
                         >{collapsed[a.id] ? "▶" : "▼"}</button>
                         <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60">
@@ -382,7 +416,7 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
             <button onClick={onOpenAddAlbum} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">+ 專輯</button>
-            <button className="rounded-lg border px-2 py-1 text-sm hover:bg黑/5" onClick={onClose}>關閉</button>
+            <button className="rounded-lg border px-2 py-1 text-sm hover:bg-black/5" onClick={onClose}>關閉</button>
           </div>
         </div>
         <div className="h-[calc(100%-49px)] space-y-3 overflow-auto p-3">
@@ -398,7 +432,7 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
               <ul className="space-y-1">
                 {a.songs.map(s => (
                   <li key={s.id}>
-                    <button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg黑/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}>
+                    <button onClick={()=>{onSelect(a.id, s.id); onClose();}} className={`w-full rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}>
                       <div className="truncate">{s.title}</div>
                     </button>
                   </li>
@@ -702,8 +736,8 @@ function MetaEditable({ label, value, placeholder, onSave }: { label: string; va
     <div className="flex items-center gap-1 text-sm">
       <span className="text-zinc-500">{label}：</span>
       <input value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder} className="rounded-md border px-2 py-1 text-sm" autoFocus />
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg黑/5" onClick={()=>{ onSave(val.trim()); setEditing(false); }}>儲存</button>
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg黑/5" onClick={()=>{ setVal(value||""); setEditing(false); }}>取消</button>
+      <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ onSave(val.trim()); setEditing(false); }}>儲存</button>
+      <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ setVal(value||""); setEditing(false); }}>取消</button>
     </div>
   );
 }
