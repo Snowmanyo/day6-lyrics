@@ -876,7 +876,7 @@ export default function App() {
           "專輯名稱",
           "專輯封面圖連結",
           "歌曲名稱",
-          "歌曲發行日(YYYY-MM-DD)",
+          "歌曲發行日(YYYY/M/D)",
           "作詞",
           "作曲",
           "韓文歌詞",
@@ -901,7 +901,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "統一範本.xlsx";
+        a.download = "kor-lyrics_sample.xlsx";
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -946,6 +946,21 @@ export default function App() {
         return;
       }
 
+      function normalizeDateSlash(input: string): string {
+        const t = (input || "").trim();
+        if (!t) return "";
+        // 抓 4位年 + 任意分隔 + 1-2位月 + 任意分隔 + 1-2位日
+        const m = t.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+        if (!m) return t; // 格式怪就原樣保留
+        const y = parseInt(m[1], 10);
+        const mo = parseInt(m[2], 10);
+        const d = parseInt(m[3], 10);
+        if (!y || !mo || !d) return t;
+        // 無前導零：2015/9/7
+        return `${y}/${mo}/${d}`;
+      }
+
+
       // ---- 表頭定位：加入全中文欄位 ----
       const rawHeader = rows[0].map(c => stripCell(c));
       const H = rawHeader.map(normalizeHeader);
@@ -954,8 +969,8 @@ export default function App() {
         cover:       idxOfAny(H, ["專輯封面圖連結","封面","封面圖","圖片","cover"]),
         songTitle:   idxOfAny(H, ["歌曲名稱","歌曲","歌名","songtitle","song","title"]),
         releaseDate: idxOfAny(H, [
-          "歌曲發行日(yyyy-mm-dd)","歌曲發行日yyyy-mm-dd","歌曲發行日",
-          "發行日","發布日","發布日期","releasedate","date"
+          "歌曲發行日(yyyy/m/d)","歌曲發行日(yyyy-mm-dd)","歌曲發行日yyyy-mm-dd",
+          "歌曲發行日","發行日","發布日","發布日期","releasedate","date"
         ]),
         lyricist:    idxOfAny(H, ["作詞","詞作者","lyricist"]),
         composer:    idxOfAny(H, ["作曲","曲作者","composer"]),
@@ -1035,7 +1050,7 @@ export default function App() {
           const comp = has(col.composer)    ? stripCell(r[col.composer])    : "";
           const cov  = has(col.cover)       ? stripCell(r[col.cover])       : "";
 
-          if (date) song.releaseDate = date;
+        if (date) song.releaseDate = normalizeDateSlash(date);
           if (lyr)  song.lyricist    = lyr;
           if (comp) song.composer    = comp;
           if (cov)  next[ai].cover   = cov;
