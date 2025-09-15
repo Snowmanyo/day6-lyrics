@@ -269,7 +269,7 @@ function DesktopSidebar({
                       </div>
                       <div className="min-w-0">
                         <div className="truncate font-medium">{a.title}</div>
-                        <div className="truncate text-xs text-zinc-500">{a.releaseDate}</div>
+                        <div className="truncate text-xs text-zinc-500">{normalizeDateSlash(a.releaseDate)}</div>
                       </div>
                     </div>
 
@@ -300,7 +300,7 @@ function DesktopSidebar({
                   </div>
                 ) : (
                   <div className="mb-2 space-y-2">
-                    <div className="flex items中心 justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <button
                           onClick={()=>onToggleCollapse(a.id)}
@@ -425,7 +425,7 @@ function SideDrawer({ open, onClose, data, selected, onSelect, onOpenAddAlbum, o
               <div className="mb-1 flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{a.title}</div>
-                  <div className="truncate text-xs text-zinc-500">{a.releaseDate}</div>
+                  <div className="truncate text-xs text-zinc-500">{normalizeDateSlash(a.releaseDate)}</div>
                 </div>
                 <button onClick={()=>onOpenAddSong(a.id)} className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">+ 歌曲</button>
               </div>
@@ -453,6 +453,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
   const [korDraft, setKorDraft] = useState(korFromState);
   const [zhDraft , setZhDraft ] = useState(zhFromState);
   useEffect(()=>{ if (editMode) { setKorDraft(korFromState); setZhDraft(zhFromState); } }, [editMode, korFromState, zhFromState]);
+
   const previewKor = editMode ? korDraft : korFromState;
   const previewZh  = editMode ? zhDraft  : zhFromState;
   const aligned = useMemo(()=> alignLyrics(previewKor, previewZh), [previewKor, previewZh]);
@@ -471,6 +472,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-2xl border bg-white/70 p-4">
+      {/* 標題列（這段以前少了 Fragment/多了錯關閉，已修正） */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">歌詞</div>
         <div className="flex items-center gap-2 text-sm">
@@ -488,6 +490,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
         </div>
       </div>
 
+      {/* 編輯表單 */}
       {editMode && (
         <div className="grid grid-cols-12 gap-3">
           <div className="col-span-12 md:col-span-6">
@@ -509,6 +512,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
         </div>
       )}
 
+      {/* 對照預覽 */}
       <div className="mt-4 flex-1 overflow-auto">
         <div className="mb-2 text-sm font-medium">對照預覽</div>
         <div className="rounded-xl border bg-white/60">
@@ -523,6 +527,7 @@ function LyricsPanel({ song, onUpdate, editMode, setEditMode }: { song: Song; on
     </div>
   );
 }
+
 
 function VocabPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partial<Song>)=>void }) {
   const [edit, setEdit] = useState(false);
@@ -609,7 +614,7 @@ function GrammarPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Partia
   function save() { onUpdate({ grammar: draft }); setEdit(false); }
 
   return (
-    <div className="rounded-2xl border bg白/70 p-4">
+    <div className="rounded-2xl border bg-white/70 p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">文法點</div>
         <div className="flex items-center gap-2">
@@ -698,26 +703,77 @@ function FlashcardPanel({ song, onUpdate }: { song: Song; onUpdate: (patch: Part
 }
 
 /* Inline editors */
-function SongTitleEditable({ title, onSave }: { title: string; onSave: (t: string)=>void }) {
+function SongTitleEditable({
+  title,
+  releaseDate,
+  onSave,
+}: {
+  title: string;
+  releaseDate?: string;
+  onSave: (t: string, date?: string) => void;
+}) {
   const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(title);
-  useEffect(()=>{ setVal(title); }, [title]);
+  const [valTitle, setValTitle] = useState(title);
+  const [valDate, setValDate] = useState(releaseDate || "");
+
+  useEffect(() => { setValTitle(title); }, [title]);
+  useEffect(() => { setValDate(releaseDate || ""); }, [releaseDate]);
+
   if (!editing) {
     return (
       <div className="text-2xl font-bold flex items-center gap-2">
         <span className="truncate">{title}</span>
-        <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>setEditing(true)} title="編輯歌名">✎</button>
+        <button
+          className="rounded-md border px-2 py-1 text-xs hover:bg-black/5"
+          onClick={() => setEditing(true)}
+          title="編輯歌名與日期"
+        >
+          ✎
+        </button>
       </div>
     );
   }
+
   return (
-    <div className="flex items-center gap-2">
-      <input value={val} onChange={e=>setVal(e.target.value)} className="text-2xl font-bold rounded-md border px-2 py-1" autoFocus />
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ onSave(val.trim() || title); setEditing(false); }}>儲存</button>
-      <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>{ setVal(title); setEditing(false); }}>取消</button>
+    <div className="flex flex-wrap items-center gap-2">
+      {/* 歌名 */}
+      <input
+        value={valTitle}
+        onChange={(e) => setValTitle(e.target.value)}
+        placeholder="歌曲名稱"
+        className="w-56 text-2xl font-bold rounded-md border px-2 py-1"
+        autoFocus
+      />
+      {/* 日期（用文字輸入以支援 2015/9/7） */}
+      <input
+        value={valDate}
+        onChange={(e) => setValDate(e.target.value)}
+        placeholder="發行日 例如 2015/9/7"
+        className="w-44 rounded-md border px-2 py-1 text-sm"
+        inputMode="numeric"
+      />
+      <button
+        className="rounded-md border px-2 py-1 text-xs hover:bg-black/5"
+        onClick={() => {
+          const t = (valTitle || "").trim();
+          if (!t) { alert("歌名不可空白"); return; }
+          const d = normalizeDateSlash(valDate);
+          onSave(t, d || undefined);
+          setEditing(false);
+        }}
+      >
+        儲存
+      </button>
+      <button
+        className="rounded-md border px-2 py-1 text-xs hover:bg-black/5"
+        onClick={() => { setValTitle(title); setValDate(releaseDate || ""); setEditing(false); }}
+      >
+        取消
+      </button>
     </div>
   );
 }
+
 
 function MetaEditable({ label, value, placeholder, onSave }: { label: string; value?: string; placeholder?: string; onSave: (v: string)=>void }) {
   const [editing, setEditing] = useState(false);
@@ -870,12 +926,12 @@ export default function App() {
   }
 
     // 範本（只含表頭）：中文欄位、無 line，歌詞順序依貼上順序
+      // 範本（只含表頭）：中文欄位、日期格式 YYYY/M/D、兩個欄位加(必填)
       async function downloadTemplate() {
-        // 中文欄位表頭（請照這組填）
         const header = [
-          "專輯名稱",
+          "專輯名稱(必填)",
           "專輯封面圖連結",
-          "歌曲名稱",
+          "歌曲名稱(必填)",
           "歌曲發行日(YYYY/M/D)",
           "作詞",
           "作曲",
@@ -901,16 +957,16 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "kor-lyrics_sample.xlsx";
+        a.download = "統一範本.xlsx";
         a.click();
         URL.revokeObjectURL(url);
       }
 
 
 
-
   /* ===== 匯入（支援單一表格；UTF-8/UTF-16；TSV/CSV） ===== */
-  function importCSV(file: File) {
+  /* ===== 匯入（支援單一表格；UTF-8/UTF-16；TSV/CSV） ===== */
+function importCSV(file: File) {
   const reader = new FileReader();
   reader.onload = async () => {
     try {
@@ -927,7 +983,7 @@ export default function App() {
         const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false }) as any[][];
         rows = (aoa || []).map(r => (r || []).map(c => (c == null ? "" : String(c))));
       } else {
-        // TXT（可放 TSV/CSV 內容）
+        // TXT（可放 TSV/CSV 內容，含 UTF-16 BOM）
         let encoding: "utf-8" | "utf-16le" | "utf-16be" = "utf-8";
         if (bytes.length >= 2) {
           if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = "utf-16le";
@@ -935,33 +991,14 @@ export default function App() {
         }
         let text = new TextDecoder(encoding).decode(bytes);
         const firstLine = text.split(/\r?\n/, 1)[0] || "";
-        if (!firstLine.includes(",") && firstLine.includes("\t")) {
-          text = text.replace(/\t/g, ",");
-        }
+        // 偵測 TSV（改成逗號，讓 parseCSV 一路吃）
+        if (!firstLine.includes(",") && firstLine.includes("\t")) text = text.replace(/\t/g, ",");
         rows = parseCSV(text);
       }
 
-      if (!rows.length) {
-        alert("找不到資料列");
-        return;
-      }
+      if (!rows.length) { alert("找不到資料列"); return; }
 
-      function normalizeDateSlash(input: string): string {
-        const t = (input || "").trim();
-        if (!t) return "";
-        // 抓 4位年 + 任意分隔 + 1-2位月 + 任意分隔 + 1-2位日
-        const m = t.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
-        if (!m) return t; // 格式怪就原樣保留
-        const y = parseInt(m[1], 10);
-        const mo = parseInt(m[2], 10);
-        const d = parseInt(m[3], 10);
-        if (!y || !mo || !d) return t;
-        // 無前導零：2015/9/7
-        return `${y}/${mo}/${d}`;
-      }
-
-
-      // ---- 表頭定位：加入全中文欄位 ----
+      // ---- 表頭定位：支援中文欄位與多種同義 ----
       const rawHeader = rows[0].map(c => stripCell(c));
       const H = rawHeader.map(normalizeHeader);
       const col = {
@@ -1050,12 +1087,12 @@ export default function App() {
           const comp = has(col.composer)    ? stripCell(r[col.composer])    : "";
           const cov  = has(col.cover)       ? stripCell(r[col.cover])       : "";
 
-        if (date) song.releaseDate = normalizeDateSlash(date);
+          if (date) song.releaseDate = normalizeDateSlash(date);
           if (lyr)  song.lyricist    = lyr;
           if (comp) song.composer    = comp;
           if (cov)  next[ai].cover   = cov;
 
-          // 取出每列實際值（用值來判斷列型）
+          // 每列實際值（用值來判斷列型）
           const korVal    = has(col.kor)     ? stripCell(r[col.kor])     : "";
           const zhLyVal   = has(col.zhLyric) ? stripCell(r[col.zhLyric]) : "";
           const wordVal   = has(col.word)    ? stripCell(r[col.word])    : "";
@@ -1064,9 +1101,9 @@ export default function App() {
           const explVal   = has(col.explain) ? stripCell(r[col.explain]) : "";
           const exmpVal   = has(col.example) ? stripCell(r[col.example]) : "";
 
-          const isLyricRow  = !!(korVal || zhLyVal);
-          const isGrammarRow= !!pattVal;
-          const isVocabRow  = !!(wordVal || zhWdVal) && !isGrammarRow;
+          const isLyricRow   = !!(korVal || zhLyVal);
+          const isGrammarRow = !!pattVal;
+          const isVocabRow   = !!(wordVal || zhWdVal) && !isGrammarRow;
 
           // 歌詞列：順序依「出現順序」
           if (isLyricRow) {
@@ -1132,39 +1169,43 @@ export default function App() {
   reader.readAsArrayBuffer(file);
 }
 
+
+
   // 匯出/匯入選單
   const CSVMenu = (
-    <>
-      <div className="px-3 py-1 text-xs text-zinc-500">匯出（TXT / UTF-8 BOM, TSV）</div>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsTXT}>專輯（含排序）</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsTXT}>歌曲清單（含作詞/作曲）</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsTXTAll}>歌詞</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabTXTAll}>單字</button>
-      <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarTXTAll}>文法</button>
-      <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">下載範本（XLSX）</div>
-      <div className="px-2 pb-1">
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5"
-                onClick={downloadTemplate}>
-          統一範本（.xlsx）
-        </button>
-      </div>
-      <div className="my-1 border-t" />
-      <div className="px-3 py-1 text-xs text-zinc-500">匯入（XLSX / TXT）</div>
-      <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
-        選擇檔案
+  <>
+    <div className="px-3 py-1 text-xs text-zinc-500">匯出（TXT / UTF-8 BOM, TSV）</div>
+    <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsTXT}>專輯（含排序）</button>
+    <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsTXT}>歌曲清單（含作詞/作曲）</button>
+    <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsTXTAll}>歌詞</button>
+    <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportVocabTXTAll}>單字</button>
+    <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportGrammarTXTAll}>文法</button>
+
+    <div className="my-1 border-t" />
+    <div className="px-3 py-1 text-xs text-zinc-500">下載範本（XLSX）</div>
+    <div className="px-2 pb-1">
+      <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={downloadTemplate}>
+        統一範本（.xlsx）
+      </button>
+    </div>
+
+    <div className="my-1 border-t" />
+    <div className="px-3 py-1 text-xs text-zinc-500">匯入（XLSX / TXT）</div>
+    <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
+      選擇檔案
       <input
         type="file"
         className="hidden"
         accept=".xlsx,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
         onChange={e=>{ const f = e.target.files?.[0]; if (f) importCSV(f); }}
       />
-      </label>
-      <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
-        建議使用<b>統一範本</b>：必填 <b>albumTitle, songTitle</b>；其餘欄位可選（作詞、作曲、歌詞、單字、文法…）。
-      </div>
-    </>
-  );
+    </label>
+    <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
+      建議使用<b>統一範本</b>：必填 <b>專輯名稱(必填)、歌曲名稱(必填)</b>；其餘欄位皆為選填（作詞、作曲、歌詞、單字、文法…）。
+    </div>
+  </>
+);
+
 
   const NewMenu = (
     <>
@@ -1250,6 +1291,19 @@ export default function App() {
     </div>
   );
 }
+    function normalizeDateSlash(input: string): string {
+      const t = (input || "").trim();
+      if (!t) return "";
+      const m = t.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+      if (!m) return t;
+      const y = parseInt(m[1], 10);
+      const mo = parseInt(m[2], 10);
+      const d = parseInt(m[3], 10);
+      if (!y || !mo || !d) return t;
+      return `${y}/${mo}/${d}`; // 無前導零：2015/9/7
+    }
+
+
 
 /* Main Area */
 function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMode }:{
@@ -1275,9 +1329,19 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
             <div className="min-w-0">
               <SongTitleEditable
                 title={current.song.title}
-                onSave={(nextTitle)=>{ updateSong(current.song.id, { title: nextTitle }); }}
+                releaseDate={current.song.releaseDate}
+                onSave={(nextTitle, nextDate) => {
+                  updateSong(current.song.id, {
+                    title: nextTitle,
+                    releaseDate: nextDate ? normalizeDateSlash(nextDate) : undefined,
+                  });
+                }}
               />
-              <div className="text-xs text-zinc-500">{current.album.title} • {current.song.releaseDate || current.album.releaseDate}</div>
+
+              <div className="text-xs text-zinc-500">
+                {current.album.title} • {normalizeDateSlash(current.song.releaseDate || current.album.releaseDate || "")}
+              </div>
+
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
                 <MetaEditable
                   label="作詞"
@@ -1292,6 +1356,7 @@ function MainArea({ data, selected, updateSong, tab, setTab, editMode, setEditMo
                   onSave={(v)=>updateSong(current.song.id, { composer: v })}
                 />
               </div>
+
             </div>
             <div className="flex flex-wrap gap-2">
               <TabButton active={tab==='lyrics'} onClick={()=>setTab('lyrics')}>歌詞</TabButton>
