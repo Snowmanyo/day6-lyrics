@@ -51,6 +51,106 @@ type Song = {
 };
 type Album = { id: string; title: string; releaseDate: string; cover?: string; songs: Song[] };
 type AppData = { artist: string; albums: Album[]; updatedAt: string; version: string };
+type ExportFieldKey =
+  | "albumTitle" | "cover" | "songTitle" | "releaseDate"
+  | "lyricist" | "composer"
+  | "kor" | "zh"
+  | "word" | "zhWord"
+  | "pattern" | "explain" | "example";
+
+const EXPORT_FIELD_LABEL: Record<ExportFieldKey, string> = {
+  albumTitle: "專輯名稱(必填)",
+  cover: "專輯封面圖連結",
+  songTitle: "歌曲名稱(必填)",
+  releaseDate: "歌曲發行日(YYYY/M/D)",
+  lyricist: "作詞",
+  composer: "作曲",
+  kor: "韓文歌詞",
+  zh: "中文歌詞",
+  word: "韓文單字",
+  zhWord: "中文單字",
+  pattern: "韓文文法",
+  explain: "文法說明",
+  example: "文法例句",
+};
+
+function ExportModal({
+  open,
+  onClose,
+  defaultSelected,
+  onExport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultSelected: ExportFieldKey[];
+  onExport: (cols: ExportFieldKey[], format: "txt" | "xlsx") => void;
+}) {
+  const [format, setFormat] = useState<"txt"|"xlsx">("xlsx");
+  const [sel, setSel] = useState<Set<ExportFieldKey>>(new Set(defaultSelected));
+
+  useEffect(()=>{ if (open) setSel(new Set(defaultSelected)); }, [open, defaultSelected]);
+
+  const must = new Set<ExportFieldKey>(["albumTitle","songTitle"]);
+
+  function toggle(k: ExportFieldKey) {
+    if (must.has(k)) return;
+    setSel(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  }
+  function selectAll(v: boolean) {
+    const all = Object.keys(EXPORT_FIELD_LABEL) as ExportFieldKey[];
+    const next = new Set<ExportFieldKey>(["albumTitle","songTitle"]);
+    if (v) for (const k of all) next.add(k);
+    setSel(next);
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="匯出（自訂欄位）">
+      <div className="space-y-3">
+        <div className="text-sm text-zinc-600">必含欄位：專輯名稱、歌曲名稱。其餘可自由勾選。</div>
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(EXPORT_FIELD_LABEL) as ExportFieldKey[]).map(k => (
+            <label key={k} className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-sm ${sel.has(k)?'bg-black/5':''}`}>
+              <input
+                type="checkbox"
+                checked={sel.has(k)}
+                disabled={k==="albumTitle" || k==="songTitle"}
+                onChange={()=>toggle(k)}
+              />
+              {EXPORT_FIELD_LABEL[k]}
+            </label>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-zinc-600">快速：</div>
+          <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>selectAll(true)}>全選</button>
+          <button className="rounded-md border px-2 py-1 text-xs hover:bg-black/5" onClick={()=>selectAll(false)}>只留必填</button>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-sm text-zinc-600">格式：</div>
+          <label className="flex items-center gap-1 text-sm">
+            <input type="radio" name="fmt" checked={format==="xlsx"} onChange={()=>setFormat("xlsx")} />
+            XLSX
+          </label>
+          <label className="flex items-center gap-1 text-sm">
+            <input type="radio" name="fmt" checked={format==="txt"} onChange={()=>setFormat("txt")} />
+            TXT（TSV）
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <ToolbarButton onClick={onClose}>取消</ToolbarButton>
+          <ToolbarButton onClick={()=>onExport(Array.from(sel), format)}>匯出</ToolbarButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 /* ===================== Helpers ===================== */
 const HAMBURGER = "\u2630"; // ☰
@@ -353,10 +453,10 @@ function DesktopSidebar({
 
                       return (
                         <li key={s.id}>
-                          <div className="grid w-full grid-cols-[1fr,auto] items-center gap-2">
+                          <div className="flex w-full items-center justify-between gap-2">
                             <button
                               onClick={()=>onSelect(a.id, s.id)}
-                              className={`min-w-0 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}
+                              className={`min-w-0 flex-1 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}
                               title="開啟歌曲"
                             >
                               <div className="truncate">{s.title}</div>
@@ -386,6 +486,7 @@ function DesktopSidebar({
                             ) : null}
                           </div>
                         </li>
+
                       );
                     })}
                     {a.songs.length===0 && <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>}
@@ -925,7 +1026,100 @@ export default function App() {
     download(`grammar.txt`, toTSV(rows));
   }
 
-    // 範本（只含表頭）：中文欄位、無 line，歌詞順序依貼上順序
+  // ===== 自訂欄位匯出 =====
+const [exportOpen, setExportOpen] = useState(false);
+
+const DEFAULT_EXPORT_COLS: ExportFieldKey[] = [
+  "albumTitle","songTitle","releaseDate","lyricist","composer",
+  "kor","zh","word","zhWord","pattern","explain","example"
+];
+
+async function exportCustom(cols: ExportFieldKey[], format: "txt"|"xlsx") {
+  // Header 依使用者選擇
+  const header = cols.map(k => EXPORT_FIELD_LABEL[k]);
+
+  // 資料列（統一表）：歌詞/單字/文法各自併到同一張表
+  const aoa: (string | number)[][] = [header];
+
+  for (const a of data.albums) {
+    for (const s of a.songs) {
+      // 歌詞
+      for (const l of s.lyrics) {
+        const row: Record<ExportFieldKey, string> = {
+          albumTitle: a.title,
+          cover: a.cover || "",
+          songTitle: s.title,
+          releaseDate: normalizeDateSlash(s.releaseDate || a.releaseDate || ""),
+          lyricist: s.lyricist || "",
+          composer: s.composer || "",
+          kor: l.kor || "",
+          zh: l.zh || "",
+          word: "",
+          zhWord: "",
+          pattern: "",
+          explain: "",
+          example: "",
+        };
+        aoa.push(cols.map(k => row[k]));
+      }
+      // 單字
+      for (const v of s.vocab) {
+        const row: Record<ExportFieldKey, string> = {
+          albumTitle: a.title, cover: a.cover || "", songTitle: s.title,
+          releaseDate: normalizeDateSlash(s.releaseDate || a.releaseDate || ""),
+          lyricist: s.lyricist || "", composer: s.composer || "",
+          kor: "", zh: "",
+          word: v.word || "", zhWord: v.zh || "",
+          pattern: "", explain: "", example: "",
+        };
+        aoa.push(cols.map(k => row[k]));
+      }
+      // 文法
+      for (const g of s.grammar) {
+        const row: Record<ExportFieldKey, string> = {
+          albumTitle: a.title, cover: a.cover || "", songTitle: s.title,
+          releaseDate: normalizeDateSlash(s.releaseDate || a.releaseDate || ""),
+          lyricist: s.lyricist || "", composer: s.composer || "",
+          kor: "", zh: "",
+          word: "", zhWord: "",
+          pattern: g.pattern || "", explain: g.explain || "", example: g.example || "",
+        };
+        aoa.push(cols.map(k => row[k]));
+      }
+
+      // 若三者都沒有資料，也至少輸出一列基本資訊
+      if (s.lyrics.length===0 && s.vocab.length===0 && s.grammar.length===0) {
+        const row: Record<ExportFieldKey, string> = {
+          albumTitle: a.title, cover: a.cover || "", songTitle: s.title,
+          releaseDate: normalizeDateSlash(s.releaseDate || a.releaseDate || ""),
+          lyricist: s.lyricist || "", composer: s.composer || "",
+          kor: "", zh: "", word: "", zhWord: "",
+          pattern: "", explain: "", example: "",
+        };
+        aoa.push(cols.map(k => row[k]));
+      }
+    }
+  }
+
+  if (format === "txt") {
+    const text = aoa.map(r => r.map(c => String(c ?? "")).join("\t")).join("\n");
+    download("export.tsv.txt", text);
+  } else {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, "export");
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "export.xlsx"; a.click(); URL.revokeObjectURL(url);
+  }
+
+  setExportOpen(false);
+}
+
+ 
       // 範本（只含表頭）：中文欄位、日期格式 YYYY/M/D、兩個欄位加(必填)
       async function downloadTemplate() {
         const header = [
@@ -965,7 +1159,6 @@ export default function App() {
 
 
   /* ===== 匯入（支援單一表格；UTF-8/UTF-16；TSV/CSV） ===== */
-  /* ===== 匯入（支援單一表格；UTF-8/UTF-16；TSV/CSV） ===== */
 function importCSV(file: File) {
   const reader = new FileReader();
   reader.onload = async () => {
@@ -973,17 +1166,43 @@ function importCSV(file: File) {
       const buf = reader.result as ArrayBuffer;
       const bytes = new Uint8Array(buf);
 
+      // 統計
+      let stat = { lyric: 0, vocab: 0, grammar: 0, skipped: 0 };
+
+      // 日期工具：Excel 序號 / Date / 文字 都轉成 "YYYY/M/D"
+      function toYMD(d: Date) {
+        const y = d.getUTCFullYear();
+        const m = d.getUTCMonth() + 1;
+        const day = d.getUTCDate();
+        return `${y}/${m}/${day}`;
+      }
+      function fromExcelSerial(n: number) {
+        // Excel 以 1899-12-30 為 day 0（含 1900 leap bug 修正）
+        const base = Date.UTC(1899, 11, 30);
+        const ms = Math.round(n * 86400 * 1000);
+        return new Date(base + ms);
+      }
+      function normalizeDateFromAny(v: any): string {
+        if (v == null) return "";
+        if (v instanceof Date) return toYMD(new Date(Date.UTC(v.getFullYear(), v.getMonth(), v.getDate())));
+        if (typeof v === "number" && v > 20000 && v < 60000) return toYMD(fromExcelSerial(v));
+        const s = String(v).trim();
+        if (/^\d{4,5}(\.\d+)?$/.test(s)) return toYMD(fromExcelSerial(Math.floor(Number(s))));
+        return normalizeDateSlash(s); // 其他文字：抓出 2015/9/7
+      }
+
       const lower = file.name.toLowerCase();
-      let rows: string[][] = [];
+      let rows: any[][] = [];
 
       if (lower.endsWith(".xlsx")) {
         const XLSX = await import("xlsx");
-        const wb = XLSX.read(bytes, { type: "array" });
+        const wb = XLSX.read(bytes, { type: "array", cellDates: true });
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false }) as any[][];
-        rows = (aoa || []).map(r => (r || []).map(c => (c == null ? "" : String(c))));
+        // raw:false + dateNF 讓「42246」輸出為「2015/9/7」
+        const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, raw: false, dateNF: "yyyy/m/d" }) as any[][];
+        rows = (aoa || []).map(r => (r || []).map(c => (c == null ? "" : c)));
       } else {
-        // TXT（可放 TSV/CSV 內容，含 UTF-16 BOM）
+        // TXT（TSV/CSV，含 UTF-16）
         let encoding: "utf-8" | "utf-16le" | "utf-16be" = "utf-8";
         if (bytes.length >= 2) {
           if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = "utf-16le";
@@ -991,15 +1210,14 @@ function importCSV(file: File) {
         }
         let text = new TextDecoder(encoding).decode(bytes);
         const firstLine = text.split(/\r?\n/, 1)[0] || "";
-        // 偵測 TSV（改成逗號，讓 parseCSV 一路吃）
         if (!firstLine.includes(",") && firstLine.includes("\t")) text = text.replace(/\t/g, ",");
         rows = parseCSV(text);
       }
 
       if (!rows.length) { alert("找不到資料列"); return; }
 
-      // ---- 表頭定位：支援中文欄位與多種同義 ----
-      const rawHeader = rows[0].map(c => stripCell(c));
+      // ---- 表頭定位 ----
+      const rawHeader = (rows[0] as any[]).map(c => stripCell(String(c)));
       const H = rawHeader.map(normalizeHeader);
       const col = {
         albumTitle:  idxOfAny(H, ["專輯名稱","專輯","專輯名","albumtitle","album"]),
@@ -1021,7 +1239,6 @@ function importCSV(file: File) {
       };
       const has = (i: number) => i >= 0;
 
-      // 只處理「統一範本」：專輯名稱 + 歌曲名稱 必填
       if (!(has(col.albumTitle) && has(col.songTitle))) {
         alert("欄位缺少「專輯名稱 / 歌曲名稱」，請使用統一範本 .xlsx 或 .txt");
         return;
@@ -1031,9 +1248,6 @@ function importCSV(file: File) {
 
       setData(d => {
         const next = d.albums.map(a => ({ ...a, songs: a.songs.map(s => ({ ...s })) }));
-
-        // 每首歌各自的「歌詞列順序」計數器（取代 line）
-        const perSongSeq: Record<string, number> = {};
 
         const getAlbumIndex = (title: string) => {
           const key = title.toLowerCase();
@@ -1049,14 +1263,7 @@ function importCSV(file: File) {
           let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === key);
           if (si < 0) {
             next[ai].songs.push({
-              id: uid(),
-              title,
-              releaseDate: today(),
-              lyricist: "",
-              composer: "",
-              lyrics: [],
-              vocab: [],
-              grammar: []
+              id: uid(), title, releaseDate: today(), lyricist: "", composer: "", lyrics: [], vocab: [], grammar: []
             });
             si = next[ai].songs.length - 1;
           }
@@ -1068,7 +1275,7 @@ function importCSV(file: File) {
 
           const aTitle = has(col.albumTitle) ? stripCell(r[col.albumTitle]) : "";
           const sTitle = has(col.songTitle)  ? stripCell(r[col.songTitle ]) : "";
-          if (!aTitle || !sTitle) continue;
+          if (!aTitle || !sTitle) { stat.skipped++; continue; }
 
           const ai = getAlbumIndex(aTitle);
           const si = getSongIndex(ai, sTitle);
@@ -1081,56 +1288,56 @@ function importCSV(file: File) {
             __touchedGrammar?: boolean;
           };
 
-          // 專輯/歌曲層欄位（有填就覆蓋）
-          const date = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
-          const lyr  = has(col.lyricist)    ? stripCell(r[col.lyricist])    : "";
-          const comp = has(col.composer)    ? stripCell(r[col.composer])    : "";
-          const cov  = has(col.cover)       ? stripCell(r[col.cover])       : "";
+          // 專輯/歌曲層欄位（有填就覆蓋）—日期處理 Excel 序號/Date
+          const rawDate = has(col.releaseDate) ? r[col.releaseDate] : "";
+          const date    = normalizeDateFromAny(rawDate);
+          const lyr     = has(col.lyricist) ? stripCell(r[col.lyricist]) : "";
+          const comp    = has(col.composer) ? stripCell(r[col.composer]) : "";
+          const cov     = has(col.cover)    ? stripCell(r[col.cover])    : "";
 
-          if (date) song.releaseDate = normalizeDateSlash(date);
+          if (date) song.releaseDate = date;
           if (lyr)  song.lyricist    = lyr;
           if (comp) song.composer    = comp;
           if (cov)  next[ai].cover   = cov;
 
-          // 每列實際值（用值來判斷列型）
-          const korVal    = has(col.kor)     ? stripCell(r[col.kor])     : "";
-          const zhLyVal   = has(col.zhLyric) ? stripCell(r[col.zhLyric]) : "";
-          const wordVal   = has(col.word)    ? stripCell(r[col.word])    : "";
-          const zhWdVal   = has(col.zhWord)  ? stripCell(r[col.zhWord])  : "";
-          const pattVal   = has(col.pattern) ? stripCell(r[col.pattern]) : "";
-          const explVal   = has(col.explain) ? stripCell(r[col.explain]) : "";
-          const exmpVal   = has(col.example) ? stripCell(r[col.example]) : "";
+          // 取值
+          const korVal  = has(col.kor)     ? stripCell(r[col.kor])     : "";
+          const zhLyVal = has(col.zhLyric) ? stripCell(r[col.zhLyric]) : "";
+          const wordVal = has(col.word)    ? stripCell(r[col.word])    : "";
+          const zhWdVal = has(col.zhWord)  ? stripCell(r[col.zhWord])  : "";
+          const pattVal = has(col.pattern) ? stripCell(r[col.pattern]) : "";
+          const explVal = has(col.explain) ? stripCell(r[col.explain]) : "";
+          const exmpVal = has(col.example) ? stripCell(r[col.example]) : "";
 
           const isLyricRow   = !!(korVal || zhLyVal);
           const isGrammarRow = !!pattVal;
           const isVocabRow   = !!(wordVal || zhWdVal) && !isGrammarRow;
 
-          // 歌詞列：順序依「出現順序」
           if (isLyricRow) {
-            const key = `${ai}#${si}`;
-            perSongSeq[key] = (perSongSeq[key] || 0) + 1;
-
             if (!song.__importLyrics) song.__importLyrics = [];
             song.__importLyrics.push({ kor: korVal, zh: zhLyVal });
             song.__touchedLyrics = true;
+            stat.lyric++;
           }
-
-          // 單字列
           if (isVocabRow) {
             if (!song.__importVocab) song.__importVocab = [];
             song.__importVocab.push({ word: wordVal, zh: zhWdVal });
             song.__touchedVocab = true;
+            stat.vocab++;
           }
-
-          // 文法列
           if (isGrammarRow) {
             if (!song.__importGrammar) song.__importGrammar = [];
             song.__importGrammar.push({ pattern: pattVal, explain: explVal, example: exmpVal });
             song.__touchedGrammar = true;
+            stat.grammar++;
+          }
+
+          if (!isLyricRow && !isVocabRow && !isGrammarRow) {
+            stat.skipped++;
           }
         }
 
-        // 收斂寫回（歌詞不再排序，直接照 push 順序）
+        // 收斂
         for (const a of next) {
           for (let i = 0; i < a.songs.length; i++) {
             const s = a.songs[i] as Song & {
@@ -1141,10 +1348,8 @@ function importCSV(file: File) {
               __touchedVocab?: boolean;
               __touchedGrammar?: boolean;
             };
-
             if (s.__touchedLyrics && s.__importLyrics) {
-              const withId = s.__importLyrics.map(x => ({ id: uid(), kor: x.kor, zh: x.zh }));
-              s.lyrics = trimLyricsTail<LyricLine>(withId);
+              s.lyrics = trimLyricsTail(s.__importLyrics.map(x => ({ id: uid(), kor: x.kor, zh: x.zh })));
               delete s.__importLyrics; delete s.__touchedLyrics;
             }
             if (s.__touchedVocab && s.__importVocab) {
@@ -1158,9 +1363,11 @@ function importCSV(file: File) {
           }
         }
 
-        alert("已匯入統一範本（中文欄位，歌詞照貼上順序）");
         return { ...d, albums: next };
       });
+
+      const ok = stat.lyric + stat.vocab + stat.grammar;
+      alert(`匯入完成：成功 ${ok} 筆（歌詞 ${stat.lyric} / 單字 ${stat.vocab} / 文法 ${stat.grammar}），失敗/略過 ${stat.skipped} 筆。`);
     } catch (e) {
       console.error(e);
       alert("XLSX/TXT 解析或匯入失敗");
@@ -1171,10 +1378,13 @@ function importCSV(file: File) {
 
 
 
+
   // 匯出/匯入選單
   const CSVMenu = (
   <>
     <div className="px-3 py-1 text-xs text-zinc-500">匯出（TXT / UTF-8 BOM, TSV）</div>
+    <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={()=>setExportOpen(true)}>匯出（自訂欄位…）</button>
+      <div className="my-1 border-t" />
     <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportAlbumsTXT}>專輯（含排序）</button>
     <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportSongsTXT}>歌曲清單（含作詞/作曲）</button>
     <button className="block w-full px-3 py-1 text-left hover:bg-black/5" onClick={exportLyricsTXTAll}>歌詞</button>
@@ -1288,6 +1498,13 @@ function importCSV(file: File) {
       {/* Modals */}
       <AddAlbumModal open={modal.type==='album'} onClose={()=>setModal({ type: null })} onSubmit={(p)=>{ addAlbumImpl(p.title, p.releaseDate, p.cover); setModal({ type: null }); }} />
       <AddSongModal  open={modal.type==='song'}  onClose={()=>setModal({ type: null })} albums={data.albums} defaultAlbumId={modal.albumId} onSubmit={(p)=>{ addSongImpl(p); setModal({ type: null }); }} />
+      <ExportModal
+          open={exportOpen}
+          onClose={()=>setExportOpen(false)}
+          defaultSelected={DEFAULT_EXPORT_COLS}
+          onExport={exportCustom}
+        />
+
     </div>
   );
 }
