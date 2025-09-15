@@ -869,34 +869,33 @@ export default function App() {
     download(`grammar.txt`, toTSV(rows));
   }
 
-  // 範本（只含表頭）
   // 範本（只含表頭）：僅提供「統一範本」的 .xlsx
-async function downloadTemplate() {
-  // 與你既有統一範本欄位一致：albumTitle、songTitle 必填，其餘選填
-  const header = [
-    "albumTitle","songTitle",
-    "releaseDate(optional)","lyricist(optional)","composer(optional)","cover(optional)",
-    "line(optional)","kor(optional)","zh(optional)",
-    "word(optional)","pattern(optional)","explain(optional)","example(optional)"
-  ];
+    async function downloadTemplate() {
+      const header = [
+        "albumTitle","songTitle",
+        "releaseDate(optional)","lyricist(optional)","composer(optional)","cover(optional)",
+        "line(optional)","kor(optional)","zh(optional)",
+        "word(optional)","pattern(optional)","explain(optional)","example(optional)"
+      ];
 
-  const XLSX = await import("xlsx");                         // 動態載入，避免首屏負擔
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([header]);
-  XLSX.utils.book_append_sheet(wb, ws, "template");
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([header]);
+      XLSX.utils.book_append_sheet(wb, ws, "template");
 
-  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob(
-    [wbout],
-    { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
-  );
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "unified-template.xlsx";
-  a.click();
-  URL.revokeObjectURL(url);
-}
+      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob(
+        [wbout],
+        { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "unified-template.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
 
 
   /* ===== 匯入（支援單一表格；UTF-8/UTF-16；TSV/CSV） ===== */
@@ -968,14 +967,6 @@ async function downloadTemplate() {
          has(col.lyricist) || has(col.composer) || has(col.releaseDate) ||
          has(col.cover) || has(col.line));
 
-      // 舊個別檔（為了相容，如果你未來不需要，可移除）
-      const kindAlbums = has(col.albumTitle) && !has(col.songTitle)
-        && !has(col.word) && !has(col.pattern) && !has(col.kor) && !has(col.zh);
-      const kindSongs = has(col.albumTitle) && has(col.songTitle) && !has(col.kor) && !has(col.zh)
-        && !has(col.word) && !has(col.pattern);
-      const kindLyrics = has(col.albumTitle) && has(col.songTitle) && (has(col.kor) || has(col.zh));
-      const kindVocab = has(col.albumTitle) && has(col.songTitle) && has(col.word) && !has(col.pattern);
-      const kindGrammar = has(col.albumTitle) && has(col.songTitle) && has(col.pattern) && !has(col.word);
 
       // 去掉表頭
       const body = rows.slice(1);
@@ -1131,7 +1122,7 @@ async function downloadTemplate() {
       </div>
 
       <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={()=>downloadTemplate("unified")}>統一範本（建議）</button>
+        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={downloadTemplate}>統一範本（建議）</button>
       </div>
       <div className="my-1 border-t" />
       <div className="px-3 py-1 text-xs text-zinc-500">匯入（XLSX / TXT）</div>
