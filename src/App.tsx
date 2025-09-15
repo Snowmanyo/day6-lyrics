@@ -869,32 +869,43 @@ export default function App() {
     download(`grammar.txt`, toTSV(rows));
   }
 
-  // 範本（只含表頭）：僅提供「統一範本」的 .xlsx
-    async function downloadTemplate() {
-      const header = [
-        "albumTitle","songTitle",
-        "releaseDate(optional)","lyricist(optional)","composer(optional)","cover(optional)",
-        "line(optional)","kor(optional)","zh(optional)",
-        "word(optional)","pattern(optional)","explain(optional)","example(optional)"
-      ];
+    // 範本（只含表頭）：中文欄位、無 line，歌詞順序依貼上順序
+      async function downloadTemplate() {
+        // 中文欄位表頭（請照這組填）
+        const header = [
+          "專輯名稱",
+          "專輯封面圖連結",
+          "歌曲名稱",
+          "歌曲發行日(YYYY-MM-DD)",
+          "作詞",
+          "作曲",
+          "韓文歌詞",
+          "中文歌詞",
+          "韓文單字",
+          "中文單字",
+          "韓文文法",
+          "文法說明",
+          "文法例句",
+        ];
 
-      const XLSX = await import("xlsx");
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet([header]);
-      XLSX.utils.book_append_sheet(wb, ws, "template");
+        const XLSX = await import("xlsx");
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([header]);
+        XLSX.utils.book_append_sheet(wb, ws, "template");
 
-      const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-      const blob = new Blob(
-        [wbout],
-        { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "unified-template.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+        const blob = new Blob(
+          [wbout],
+          { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "統一範本.xlsx";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
 
 
 
@@ -906,7 +917,6 @@ export default function App() {
       const buf = reader.result as ArrayBuffer;
       const bytes = new Uint8Array(buf);
 
-      // 先判斷副檔名，.xlsx 走 SheetJS，其它走原本 TXT/TSV/CSV 邏輯
       const lower = file.name.toLowerCase();
       let rows: string[][] = [];
 
@@ -917,15 +927,13 @@ export default function App() {
         const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false }) as any[][];
         rows = (aoa || []).map(r => (r || []).map(c => (c == null ? "" : String(c))));
       } else {
-        // ====== 走原本 TXT/TSV/CSV 流程 ======
-        // 判斷 BOM
+        // TXT（可放 TSV/CSV 內容）
         let encoding: "utf-8" | "utf-16le" | "utf-16be" = "utf-8";
         if (bytes.length >= 2) {
           if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = "utf-16le";
           else if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = "utf-16be";
         }
         let text = new TextDecoder(encoding).decode(bytes);
-        // 若是 TSV（第一行無逗號但有 tab），轉逗號解析；否則維持你原本 parseCSV()
         const firstLine = text.split(/\r?\n/, 1)[0] || "";
         if (!firstLine.includes(",") && firstLine.includes("\t")) {
           text = text.replace(/\t/g, ",");
@@ -938,68 +946,143 @@ export default function App() {
         return;
       }
 
-      // ====== 以下維持你原本的欄位正規化 / 統一範本 / 舊個別檔判斷 / 寫回資料 ======
-      // 標頭正規化
+      // ---- 表頭定位：加入全中文欄位 ----
       const rawHeader = rows[0].map(c => stripCell(c));
       const H = rawHeader.map(normalizeHeader);
-
       const col = {
-        albumTitle:  idxOfAny(H, ["albumtitle","album","專輯","專輯名稱","專輯名"]),
-        songTitle:   idxOfAny(H, ["songtitle","song","title","歌曲","歌名"]),
-        releaseDate: idxOfAny(H, ["releasedate","date","發佈日","發佈日期","發布日","發布日期"]),
-        cover:       idxOfAny(H, ["cover","封面","圖片","封面圖"]),
-        lyricist:    idxOfAny(H, ["lyricist","作詞","詞作者","填詞"]),
-        composer:    idxOfAny(H, ["composer","作曲","曲作者","譜曲"]),
-        line:        idxOfAny(H, ["line","行","行號","序"]),
-        kor:         idxOfAny(H, ["kor","korean","kr","han","韓文"]),
-        zh:          idxOfAny(H, ["zh","chinese","cn","中文","翻譯","釋義"]),
-        word:        idxOfAny(H, ["word","koreanword","單字","詞"]),
-        pattern:     idxOfAny(H, ["pattern","文法","語法"]),
-        explain:     idxOfAny(H, ["explain","說明"]),
-        example:     idxOfAny(H, ["example","例句"]),
+        albumTitle:  idxOfAny(H, ["專輯名稱","專輯","專輯名","albumtitle","album"]),
+        cover:       idxOfAny(H, ["專輯封面圖連結","封面","封面圖","圖片","cover"]),
+        songTitle:   idxOfAny(H, ["歌曲名稱","歌曲","歌名","songtitle","song","title"]),
+        releaseDate: idxOfAny(H, [
+          "歌曲發行日(yyyy-mm-dd)","歌曲發行日yyyy-mm-dd","歌曲發行日",
+          "發行日","發布日","發布日期","releasedate","date"
+        ]),
+        lyricist:    idxOfAny(H, ["作詞","詞作者","lyricist"]),
+        composer:    idxOfAny(H, ["作曲","曲作者","composer"]),
+        kor:         idxOfAny(H, ["韓文歌詞","kor","korean","kr","han","韓文"]),
+        zhLyric:     idxOfAny(H, ["中文歌詞","zh_lyric","zh(lyric)"]),
+        word:        idxOfAny(H, ["韓文單字","單字","word"]),
+        zhWord:      idxOfAny(H, ["中文單字","單字中文","釋義","zh_word"]),
+        pattern:     idxOfAny(H, ["韓文文法","文法","pattern"]),
+        explain:     idxOfAny(H, ["文法說明","說明","explain"]),
+        example:     idxOfAny(H, ["文法例句","例句","example"]),
       };
       const has = (i: number) => i >= 0;
 
-      // 統一表格：album+song 必填，其餘任一欄存在即為統一表
-      const kindUnified =
-        has(col.albumTitle) && has(col.songTitle) &&
-        (has(col.kor) || has(col.zh) || has(col.word) || has(col.pattern) ||
-         has(col.lyricist) || has(col.composer) || has(col.releaseDate) ||
-         has(col.cover) || has(col.line));
+      // 只處理「統一範本」：專輯名稱 + 歌曲名稱 必填
+      if (!(has(col.albumTitle) && has(col.songTitle))) {
+        alert("欄位缺少「專輯名稱 / 歌曲名稱」，請使用統一範本 .xlsx 或 .txt");
+        return;
+      }
 
-
-      // 去掉表頭
       const body = rows.slice(1);
 
-      // ====== 統一表格路徑（你的原本實作搬過來） ======
-      if (kindUnified) {
-        setData(d => {
-          const next = d.albums.map(a => ({ ...a, songs: a.songs.map(s => ({ ...s })) }));
-          const perSongRowSeq: Record<string, number> = {};
+      setData(d => {
+        const next = d.albums.map(a => ({ ...a, songs: a.songs.map(s => ({ ...s })) }));
 
-          const getAlbumIndex = (title: string) => {
-            const key = title.toLowerCase();
-            let ai = next.findIndex(a => a.title.toLowerCase() === key);
-            if (ai < 0) { next.push({ id: uid(), title, releaseDate: today(), cover: "", songs: [] }); ai = next.length - 1; }
-            return ai;
+        // 每首歌各自的「歌詞列順序」計數器（取代 line）
+        const perSongSeq: Record<string, number> = {};
+
+        const getAlbumIndex = (title: string) => {
+          const key = title.toLowerCase();
+          let ai = next.findIndex(a => a.title.toLowerCase() === key);
+          if (ai < 0) {
+            next.push({ id: uid(), title, releaseDate: today(), cover: "", songs: [] });
+            ai = next.length - 1;
+          }
+          return ai;
+        };
+        const getSongIndex = (ai: number, title: string) => {
+          const key = title.toLowerCase();
+          let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === key);
+          if (si < 0) {
+            next[ai].songs.push({
+              id: uid(),
+              title,
+              releaseDate: today(),
+              lyricist: "",
+              composer: "",
+              lyrics: [],
+              vocab: [],
+              grammar: []
+            });
+            si = next[ai].songs.length - 1;
+          }
+          return si;
+        };
+
+        for (let rowIdx = 0; rowIdx < body.length; rowIdx++) {
+          const r = body[rowIdx];
+
+          const aTitle = has(col.albumTitle) ? stripCell(r[col.albumTitle]) : "";
+          const sTitle = has(col.songTitle)  ? stripCell(r[col.songTitle ]) : "";
+          if (!aTitle || !sTitle) continue;
+
+          const ai = getAlbumIndex(aTitle);
+          const si = getSongIndex(ai, sTitle);
+          const song = next[ai].songs[si] as Song & {
+            __importLyrics?: { kor:string; zh:string }[];
+            __importVocab?: { word:string; zh:string }[];
+            __importGrammar?: { pattern:string; explain:string; example:string }[];
+            __touchedLyrics?: boolean;
+            __touchedVocab?: boolean;
+            __touchedGrammar?: boolean;
           };
-          const getSongIndex = (ai: number, title: string) => {
-            const key = title.toLowerCase();
-            let si = next[ai].songs.findIndex(s => s.title.toLowerCase() === key);
-            if (si < 0) { next[ai].songs.push({ id: uid(), title, releaseDate: today(), lyricist: "", composer: "", lyrics: [], vocab: [], grammar: [] }); si = next[ai].songs.length - 1; }
-            return si;
-          };
 
-          for (let rowIdx = 0; rowIdx < body.length; rowIdx++) {
-            const r = body[rowIdx];
-            const aTitle = has(col.albumTitle) ? stripCell(r[col.albumTitle]) : "";
-            const sTitle = has(col.songTitle)  ? stripCell(r[col.songTitle ]) : "";
-            if (!aTitle || !sTitle) continue;
+          // 專輯/歌曲層欄位（有填就覆蓋）
+          const date = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
+          const lyr  = has(col.lyricist)    ? stripCell(r[col.lyricist])    : "";
+          const comp = has(col.composer)    ? stripCell(r[col.composer])    : "";
+          const cov  = has(col.cover)       ? stripCell(r[col.cover])       : "";
 
-            const ai = getAlbumIndex(aTitle);
-            const si = getSongIndex(ai, sTitle);
-            const song = next[ai].songs[si] as Song & {
-              __importLyrics?: { line:number; kor:string; zh:string }[];
+          if (date) song.releaseDate = date;
+          if (lyr)  song.lyricist    = lyr;
+          if (comp) song.composer    = comp;
+          if (cov)  next[ai].cover   = cov;
+
+          // 取出每列實際值（用值來判斷列型）
+          const korVal    = has(col.kor)     ? stripCell(r[col.kor])     : "";
+          const zhLyVal   = has(col.zhLyric) ? stripCell(r[col.zhLyric]) : "";
+          const wordVal   = has(col.word)    ? stripCell(r[col.word])    : "";
+          const zhWdVal   = has(col.zhWord)  ? stripCell(r[col.zhWord])  : "";
+          const pattVal   = has(col.pattern) ? stripCell(r[col.pattern]) : "";
+          const explVal   = has(col.explain) ? stripCell(r[col.explain]) : "";
+          const exmpVal   = has(col.example) ? stripCell(r[col.example]) : "";
+
+          const isLyricRow  = !!(korVal || zhLyVal);
+          const isGrammarRow= !!pattVal;
+          const isVocabRow  = !!(wordVal || zhWdVal) && !isGrammarRow;
+
+          // 歌詞列：順序依「出現順序」
+          if (isLyricRow) {
+            const key = `${ai}#${si}`;
+            perSongSeq[key] = (perSongSeq[key] || 0) + 1;
+
+            if (!song.__importLyrics) song.__importLyrics = [];
+            song.__importLyrics.push({ kor: korVal, zh: zhLyVal });
+            song.__touchedLyrics = true;
+          }
+
+          // 單字列
+          if (isVocabRow) {
+            if (!song.__importVocab) song.__importVocab = [];
+            song.__importVocab.push({ word: wordVal, zh: zhWdVal });
+            song.__touchedVocab = true;
+          }
+
+          // 文法列
+          if (isGrammarRow) {
+            if (!song.__importGrammar) song.__importGrammar = [];
+            song.__importGrammar.push({ pattern: pattVal, explain: explVal, example: exmpVal });
+            song.__touchedGrammar = true;
+          }
+        }
+
+        // 收斂寫回（歌詞不再排序，直接照 push 順序）
+        for (const a of next) {
+          for (let i = 0; i < a.songs.length; i++) {
+            const s = a.songs[i] as Song & {
+              __importLyrics?: { kor:string; zh:string }[];
               __importVocab?: { word:string; zh:string }[];
               __importGrammar?: { pattern:string; explain:string; example:string }[];
               __touchedLyrics?: boolean;
@@ -1007,93 +1090,25 @@ export default function App() {
               __touchedGrammar?: boolean;
             };
 
-            // 專輯/歌曲層級欄位
-            const date = has(col.releaseDate) ? stripCell(r[col.releaseDate]) : "";
-            const lyr  = has(col.lyricist)    ? stripCell(r[col.lyricist])    : "";
-            const comp = has(col.composer)    ? stripCell(r[col.composer])    : "";
-            const cov  = has(col.cover)       ? stripCell(r[col.cover])       : "";
-            if (date) song.releaseDate = date;
-            if (lyr)  song.lyricist    = lyr;
-            if (comp) song.composer    = comp;
-            if (cov)  next[ai].cover   = cov;
-
-            // 歌詞
-            if (has(col.kor) || has(col.zh)) {
-              const line = has(col.line) ? parseInt(stripCell(r[col.line] || ""), 10) : NaN;
-              const seqKey = `${ai}#${si}`;
-              const seq = (perSongRowSeq[seqKey] = (perSongRowSeq[seqKey] || 0) + 1);
-              const ln = Number.isFinite(line) ? line : seq;
-
-              const kor = has(col.kor) ? stripCell(r[col.kor]) : "";
-              const zh  = has(col.zh)  ? stripCell(r[col.zh])  : "";
-              if (!song.__importLyrics) song.__importLyrics = [];
-              song.__importLyrics.push({ line: ln, kor, zh });
-              song.__touchedLyrics = true;
+            if (s.__touchedLyrics && s.__importLyrics) {
+              const withId = s.__importLyrics.map(x => ({ id: uid(), kor: x.kor, zh: x.zh }));
+              s.lyrics = trimLyricsTail<LyricLine>(withId);
+              delete s.__importLyrics; delete s.__touchedLyrics;
             }
-
-            // 單字
-            if (has(col.word) && !has(col.pattern)) {
-              const word = stripCell(r[col.word] || "");
-              const zh   = has(col.zh) ? stripCell(r[col.zh] || "") : "";
-              if (word) {
-                if (!song.__importVocab) song.__importVocab = [];
-                song.__importVocab.push({ word, zh });
-                song.__touchedVocab = true;
-              }
+            if (s.__touchedVocab && s.__importVocab) {
+              s.vocab = s.__importVocab.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
+              delete s.__importVocab; delete s.__touchedVocab;
             }
-
-            // 文法
-            if (has(col.pattern) && !has(col.word)) {
-              const pattern = stripCell(r[col.pattern] || "");
-              const explain = has(col.explain) ? stripCell(r[col.explain] || "") : "";
-              const example = has(col.example) ? stripCell(r[col.example] || "") : "";
-              if (pattern) {
-                if (!song.__importGrammar) song.__importGrammar = [];
-                song.__importGrammar.push({ pattern, explain, example });
-                song.__touchedGrammar = true;
-              }
+            if (s.__touchedGrammar && s.__importGrammar) {
+              s.grammar = s.__importGrammar.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
+              delete s.__importGrammar; delete s.__touchedGrammar;
             }
           }
+        }
 
-          // 收斂寫回（維持你原本的整理邏輯）
-          for (const a of next) {
-            for (let i = 0; i < a.songs.length; i++) {
-              const s = a.songs[i] as Song & {
-                __importLyrics?: { line:number; kor:string; zh:string }[];
-                __importVocab?: { word:string; zh:string }[];
-                __importGrammar?: { pattern:string; explain:string; example:string }[];
-                __touchedLyrics?: boolean;
-                __touchedVocab?: boolean;
-                __touchedGrammar?: boolean;
-              };
-              if (s.__touchedLyrics && s.__importLyrics) {
-                const withId = s.__importLyrics.sort((x, y) => x.line - y.line).map(x => ({ id: uid(), kor: x.kor, zh: x.zh }));
-                s.lyrics = trimLyricsTail<LyricLine>(withId);
-                delete s.__importLyrics; delete s.__touchedLyrics;
-              }
-              if (s.__touchedVocab && s.__importVocab) {
-                s.vocab = s.__importVocab.map(x => ({ id: uid(), word: x.word, zh: x.zh }));
-                delete s.__importVocab; delete s.__touchedVocab;
-              }
-              if (s.__touchedGrammar && s.__importGrammar) {
-                s.grammar = s.__importGrammar.map(x => ({ id: uid(), pattern: x.pattern, explain: x.explain, example: x.example }));
-                delete s.__importGrammar; delete s.__touchedGrammar;
-              }
-            }
-          }
-
-          alert("已匯入統一範本");
-          return { ...d, albums: next };
-        });
-        return;
-      }
-
-      // ====== 舊個別檔（保留相容；你若不再需要可刪） ======
-      // ...（此處沿用你原本的個別檔支援邏輯，無需變更）...
-      // 直接貼回你現有程式裡「kindAlbums / kindSongs / kindLyrics / kindVocab / kindGrammar」後續原碼
-
-      // 若以上都沒命中：
-      alert("無法判斷格式，請使用統一範本 .xlsx 或 .txt");
+        alert("已匯入統一範本（中文欄位，歌詞照貼上順序）");
+        return { ...d, albums: next };
+      });
     } catch (e) {
       console.error(e);
       alert("XLSX/TXT 解析或匯入失敗");
@@ -1101,7 +1116,6 @@ export default function App() {
   };
   reader.readAsArrayBuffer(file);
 }
-
 
   // 匯出/匯入選單
   const CSVMenu = (
