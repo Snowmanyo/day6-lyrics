@@ -1120,10 +1120,6 @@ export default function App() {
           統一範本（.xlsx）
         </button>
       </div>
-
-      <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-        <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5" onClick={downloadTemplate}>統一範本（建議）</button>
-      </div>
       <div className="my-1 border-t" />
       <div className="px-3 py-1 text-xs text-zinc-500">匯入（XLSX / TXT）</div>
       <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
