@@ -435,37 +435,52 @@ function DesktopSidebar({
                         <li key={s.id}>
                           <div className="flex w-full items-center justify-between gap-2">
                             <button
-                              onClick={()=>onSelect(a.id, s.id)}
-                              className={`min-w-0 flex-1 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${selected?.songId===s.id ? 'bg-black/5 font-medium' : ''}`}
+                              onClick={() => onSelect(a.id, s.id)}
+                              className={`min-w-0 flex-1 rounded-lg px-2 py-1 text-left hover:bg-black/5 ${
+                                selected?.songId === s.id ? "bg-black/5 font-medium" : ""
+                              }`}
                               title="開啟歌曲"
                             >
                               <div className="truncate">{s.title}</div>
                             </button>
 
-                            {sortMode ? (
-                              <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1">
+                              {(sortMode || editing) && (
+                                <>
+                                  <button
+                                    className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                                    onClick={() => onReorderSong(a.id, songIdx, songIdx - 1)}
+                                    disabled={sTop}
+                                    title="上移歌曲"
+                                  >
+                                    ▲
+                                  </button>
+                                  <button
+                                    className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
+                                    onClick={() => onReorderSong(a.id, songIdx, songIdx + 1)}
+                                    disabled={sBottom}
+                                    title="下移歌曲"
+                                  >
+                                    ▼
+                                  </button>
+                                </>
+                              )}
+                              {editing && (
                                 <button
-                                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
-                                  onClick={()=>onReorderSong(a.id, songIdx, songIdx-1)}
-                                  disabled={sTop}
-                                  title="上移歌曲"
-                                >▲</button>
-                                <button
-                                  className="rounded-md border px-2 py-1 text-xs hover:bg-black/5 disabled:opacity-40"
-                                  onClick={()=>onReorderSong(a.id, songIdx, songIdx+1)}
-                                  disabled={sBottom}
-                                  title="下移歌曲"
-                                >▼</button>
-                              </div>
-                            ) : editing ? (
-                              <button
-                                onClick={(e)=>{ e.stopPropagation(); onDeleteSong(a.id, s.id); }}
-                                className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
-                                title="刪除此歌曲"
-                              >×</button>
-                            ) : null}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteSong(a.id, s.id);
+                                  }}
+                                  className="shrink-0 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
+                                  title="刪除此歌曲"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </li>
+
 
                       );
                     })}
