@@ -398,7 +398,7 @@ function DesktopSidebar({
                           onClick={()=>onToggleCollapse(a.id)}
                           className="shrink-0 rounded-md border px-1.5 py-1 text-xs hover:bg-black/5"
                           title="收合/展開"
-                        >{collapsed[a.id] ? "▶" : "▼"}</button>
+                        >{isCollapsed ? "▶" : "▼"}</button>
                         <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-white/60">
                           {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">無封面</div>}
                         </div>
@@ -508,36 +508,17 @@ function DesktopSidebar({
   );
 }
 
-// === 跨 iOS/Android/桌機穩定拖曳：依總位移直接算目標索引（可一次跨多格） ===
-// === 拖曳（按下→放開時計算最終目標索引；可一次跨多格） ===
-function useDragToIndex(startIndex: number, max: number, onDrop: (toIndex: number)=>void) {
+// ===================== Mobile Drawer（RWD） =====================
+// === 拖曳（有動畫）：按下→移動時顯示位移，放開後一次移到目標索引（可一次跨多格） ===
+function useDragY() {
   const startY = React.useRef(0);
-  const active = React.useRef(false);
-  const ROW = 44; // 行高估值；若太敏感/不夠敏感，調 40~48
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    active.current = true;
-    startY.current = e.clientY;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    document.body.style.userSelect = 'none';
-  };
-  const onPointerMove = (_e: React.PointerEvent) => { /* 不即時搬動，避免位移亂跳 */ };
-  const finish = (e: React.PointerEvent) => {
-    if (active.current) {
-      const dy = e.clientY - startY.current;
-      const delta = Math.round(dy / ROW);
-      const target = Math.max(0, Math.min(max, startIndex + delta));
-      if (target !== startIndex) onDrop(target);
-    }
-    active.current = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    document.body.style.userSelect = '';
-  };
-  return { onPointerDown, onPointerMove, onPointerUp: finish, onPointerCancel: finish };
+  const dragging = React.useRef(false);
+  const setStart = (y: number) => { startY.current = y; dragging.current = true; document.body.style.userSelect = 'none'; };
+  const delta = (y: number) => y - startY.current;
+  const end = () => { dragging.current = false; document.body.style.userSelect = ''; };
+  return { setStart, delta, end, dragging };
 }
 
-
-// ===================== Mobile Drawer（RWD） =====================
 function SideDrawer({
   open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong,
   sortMode, onToggleSort,
@@ -566,13 +547,23 @@ function SideDrawer({
   onOpenExport: () => void;
   onImport: (file: File) => void;
 }) {
-  // 這些在手機抽屜沒用，但為了 API 一致保留
+  // 手機抽屜不使用，但為 API 相容保留
   void onDeleteAlbum; void onUpdateAlbum; void onUploadAlbumCover; void onOpenExport; void onImport;
 
-  // ✏️ 手機側欄也有編輯開關（預設關閉）
+  // ✏️ 預設不是編輯；只有按筆 icon 才顯示刪除
   const [editMode, setEditMode] = React.useState(false);
-
   const [newOpen, setNewOpen] = React.useState(false);
+
+  // 動畫參數
+  const ROW = 44; // 一列的視覺高度：可視需要微調 40~48
+
+  // 專輯拖曳動畫狀態
+  const [dragA, setDragA] = React.useState<{ start: number; dy: number } | null>(null);
+  const dA = useDragY();
+
+  // 歌曲拖曳動畫狀態（需記住 albumId）
+  const [dragS, setDragS] = React.useState<{ albumId: string; start: number; dy: number } | null>(null);
+  const dS = useDragY();
 
   return (
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
@@ -631,23 +622,52 @@ function SideDrawer({
           {data.albums.map((a, albumIdx) => {
             const isCollapsed = !!collapsed?.[a.id];
 
-            // 專輯拖曳（放開時計算最終目標；可一次跨多格）
-            const albumDrag = useDragToIndex(albumIdx, data.albums.length - 1, (to) => {
-              if (to !== albumIdx) onReorderAlbum(albumIdx, to);
-            });
+            // 計算專輯項目的 transform（有拖曳就位移＋其他項目讓位）
+            let albumTranslate = 0;
+            let albumZ = 0;
+            let albumTarget = albumIdx;
+
+            if (dragA) {
+              albumTarget = Math.max(0, Math.min(data.albums.length - 1, dragA.start + Math.round(dragA.dy / ROW)));
+              if (albumIdx === dragA.start) { albumTranslate = dragA.dy; albumZ = 10; }
+              else if (albumIdx > dragA.start && albumIdx <= albumTarget) albumTranslate = -ROW;
+              else if (albumIdx < dragA.start && albumIdx >= albumTarget) albumTranslate = ROW;
+            }
+
+            // 拖曳把手的事件（專輯）
+            const onAlbumHandleDown = (e: React.PointerEvent) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              dA.setStart(e.clientY);
+              setDragA({ start: albumIdx, dy: 0 });
+            };
+            const onAlbumHandleMove = (e: React.PointerEvent) => {
+              if (!dragA) return;
+              setDragA(prev => prev ? { ...prev, dy: dA.delta(e.clientY) } : prev);
+            };
+            const onAlbumHandleUp = (e: React.PointerEvent) => {
+              if (!dragA) return;
+              const target = Math.max(0, Math.min(data.albums.length - 1, dragA.start + Math.round(dA.delta(e.clientY) / ROW)));
+              if (target !== dragA.start) onReorderAlbum(dragA.start, target);
+              dA.end(); setDragA(null);
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            };
 
             return (
-              <div key={a.id} className="mb-2 rounded-lg border">
+              <div
+                key={a.id}
+                className="mb-2 rounded-lg border will-change-transform"
+                style={{ transform: `translateY(${albumTranslate}px)`, transition: dragA ? 'transform 120ms' : 'transform 180ms', zIndex: albumZ, position: albumZ ? 'relative' : undefined }}
+              >
                 <div className="flex items-center justify-between border-b bg-white/50 p-2">
                   {/* 專輯排序把手（僅排序模式顯示） */}
                   {sortMode && (
                     <div
                       className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
                       title="長按上下拖動專輯順序"
-                      onPointerDown={albumDrag.onPointerDown}
-                      onPointerMove={albumDrag.onPointerMove}
-                      onPointerUp={albumDrag.onPointerUp}
-                      onPointerCancel={albumDrag.onPointerCancel}
+                      onPointerDown={onAlbumHandleDown}
+                      onPointerMove={onAlbumHandleMove}
+                      onPointerUp={onAlbumHandleUp}
+                      onPointerCancel={onAlbumHandleUp}
                     >
                       ≡
                     </div>
@@ -655,7 +675,7 @@ function SideDrawer({
 
                   <div className="truncate font-medium">{a.title}</div>
 
-                  {/* ▶/▼ 收合（穩健：一定使用傳入的 handler） */}
+                  {/* ▶/▼ 收合（穩健） */}
                   <button
                     className="text-xs text-zinc-600"
                     onClick={()=> onToggleCollapse(a.id)}
@@ -668,21 +688,51 @@ function SideDrawer({
                 {!isCollapsed && (
                   <ul className="divide-y">
                     {a.songs.map((s, songIdx) => {
-                      const songDrag = useDragToIndex(songIdx, a.songs.length - 1, (to) => {
-                        if (to !== songIdx) onReorderSong(a.id, songIdx, to);
-                      });
+                      // 計算歌曲項目的 transform（同樣有動畫）
+                      let songTranslate = 0;
+                      let songZ = 0;
+                      let songTarget = songIdx;
+                      const draggingThisAlbum = dragS && dragS.albumId === a.id;
+
+                      if (draggingThisAlbum) {
+                        songTarget = Math.max(0, Math.min(a.songs.length - 1, dragS.start + Math.round(dragS.dy / ROW)));
+                        if (songIdx === dragS.start) { songTranslate = dragS.dy; songZ = 10; }
+                        else if (songIdx > dragS.start && songIdx <= songTarget) songTranslate = -ROW;
+                        else if (songIdx < dragS.start && songIdx >= songTarget) songTranslate = ROW;
+                      }
+
+                      const onSongHandleDown = (e: React.PointerEvent) => {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        dS.setStart(e.clientY);
+                        setDragS({ albumId: a.id, start: songIdx, dy: 0 });
+                      };
+                      const onSongHandleMove = (e: React.PointerEvent) => {
+                        if (!dragS) return;
+                        setDragS(prev => prev ? { ...prev, dy: dS.delta(e.clientY) } : prev);
+                      };
+                      const onSongHandleUp = (e: React.PointerEvent) => {
+                        if (!dragS) return;
+                        const target = Math.max(0, Math.min(a.songs.length - 1, dragS.start + Math.round(dS.delta(e.clientY) / ROW)));
+                        if (target !== dragS.start) onReorderSong(a.id, dragS.start, target);
+                        dS.end(); setDragS(null);
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      };
 
                       return (
-                        <li key={s.id} className="flex items-center justify-between p-2">
-                          {/* 歌曲排序把手（僅排序時顯示） */}
+                        <li
+                          key={s.id}
+                          className="flex items-center justify-between p-2 will-change-transform"
+                          style={{ transform: `translateY(${songTranslate}px)`, transition: draggingThisAlbum ? 'transform 120ms' : 'transform 180ms', zIndex: songZ, position: songZ ? 'relative' : undefined }}
+                        >
+                          {/* 歌曲排序把手（僅排序模式顯示） */}
                           {sortMode && (
                             <div
                               className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
                               title="長按上下拖動歌曲順序"
-                              onPointerDown={songDrag.onPointerDown}
-                              onPointerMove={songDrag.onPointerMove}
-                              onPointerUp={songDrag.onPointerUp}
-                              onPointerCancel={songDrag.onPointerCancel}
+                              onPointerDown={onSongHandleDown}
+                              onPointerMove={onSongHandleMove}
+                              onPointerUp={onSongHandleUp}
+                              onPointerCancel={onSongHandleUp}
                             >
                               ≡
                             </div>
@@ -695,7 +745,7 @@ function SideDrawer({
                             {s.title}
                           </button>
 
-                          {/* 編輯模式時才顯示刪除（避免看起來像預設就是編輯狀態） */}
+                          {/* 編輯模式才顯示刪除（避免看起來像預設就是編輯狀態） */}
                           {editMode && !sortMode && (
                             <button
                               onClick={()=>onDeleteSong(a.id,s.id)}
@@ -719,8 +769,6 @@ function SideDrawer({
     </div>
   );
 }
-
-
 
 
 
@@ -1204,25 +1252,29 @@ export default function App() {
   const [editMode, setEditMode] = useState(false); // 歌詞編輯預設關閉
   const [query, setQuery] = useState("");
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  // --- 搜尋過濾 ---
-function norm(s: string){ return (s||"").toLowerCase().trim(); }
-function songHit(s: Song, q: string){
+  // --- 搜尋過濾（桌機與手機側欄共用） ---
+function _norm(s: string){ return (s||"").toLowerCase().trim(); }
+function _songHit(s: Song, q: string){
   if (!q) return true;
-  const t = norm(s.title), k = norm(s.lyrics.map(l=>l.kor).join("\n")), z = norm(s.lyrics.map(l=>l.zh).join("\n"));
+  const t = _norm(s.title);
+  // 直接在側欄列表就用歌名與歌詞做基本過濾
+  const k = _norm(s.lyrics.map(l=>l.kor).join("\n"));
+  const z = _norm(s.lyrics.map(l=>l.zh ).join("\n"));
   return t.includes(q) || k.includes(q) || z.includes(q);
 }
 const viewData = useMemo<AppData>(() => {
-  const q = norm(query);
+  const q = _norm(query);
   if (!q) return data;
   const albums = data.albums
     .map(a => {
-      const titleHit = norm(a.title).includes(q);
-      const songs = a.songs.filter(s => titleHit || songHit(s, q));
+      const titleHit = _norm(a.title).includes(q);
+      const songs = a.songs.filter(s => titleHit || _songHit(s, q));
       return { ...a, songs };
     })
     .filter(a => a.songs.length > 0);
   return { ...data, albums };
 }, [data, query]);
+
 
   useEffect(() => {
     try { const side = localStorage.getItem('lyrics_sidebar'); if (side === 'closed') setSidebarVisible(false); } catch {}
