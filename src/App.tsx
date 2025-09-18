@@ -508,17 +508,7 @@ function DesktopSidebar({
   );
 }
 
-// ===================== Mobile Drawer（RWD） =====================
-// ===================== Mobile Drawer（RWD） =====================
-// === 拖曳（有動畫）：按下→移動時顯示位移，放開後一次移到目標索引（可一次跨多格） ===
-function useDragY() {
-  const startY = React.useRef(0);
-  const dragging = React.useRef(false);
-  const setStart = (y: number) => { startY.current = y; dragging.current = true; document.body.style.userSelect = 'none'; };
-  const delta = (y: number) => y - startY.current;
-  const end = () => { dragging.current = false; document.body.style.userSelect = ''; };
-  return { setStart, delta, end, dragging };
-}
+
 
 // ===================== Mobile Drawer（與桌機一致：搜尋＋匯入/匯出＋新增＋編輯/刪除＋拖拉排序） =====================
 function SideDrawer({
@@ -574,11 +564,17 @@ function SideDrawer({
     setY.current = e.clientY;
     document.body.style.userSelect = 'none';
   };
-  const moveDrag = (e: React.PointerEvent, setState: React.Dispatch<React.SetStateAction<any>>, getY: React.MutableRefObject<number>, patch: (dy: number)=>any) => {
-    e.preventDefault();
-    const dy = e.clientY - getY.current;
-    setState(prev => prev ? { ...prev, ...patch(dy) } : prev);
-  };
+  const moveDrag = (
+  e: React.PointerEvent,
+  setState: React.Dispatch<React.SetStateAction<any>>,
+  getY: React.MutableRefObject<number>,
+  patch: (dy: number) => any
+) => {
+  e.preventDefault();
+  const dy = e.clientY - getY.current;
+  setState((prev: any) => (prev ? { ...prev, ...patch(dy) } : prev));
+};
+
   const endDrag = (e: React.PointerEvent, clear: ()=>void) => {
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     document.body.style.userSelect = '';
