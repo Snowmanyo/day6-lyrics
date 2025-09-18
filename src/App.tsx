@@ -519,6 +519,8 @@ function useDragY() {
   return { setStart, delta, end, dragging };
 }
 
+
+// ===================== Mobile Drawer（RWD） =====================
 function SideDrawer({
   open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong,
   sortMode, onToggleSort,
@@ -526,7 +528,8 @@ function SideDrawer({
   onReorderAlbum, onReorderSong, onDeleteSong, onDeleteAlbum,
   collapsed, onToggleCollapse,
   onUpdateAlbum, onUploadAlbumCover,
-  onOpenExport, onImport
+  onOpenExport, onImport,
+  query, onChangeQuery
 }: {
   open: boolean; onClose: () => void;
   data: AppData;
@@ -546,6 +549,10 @@ function SideDrawer({
   onUploadAlbumCover: (albumId: string, file: File) => void;
   onOpenExport: () => void;
   onImport: (file: File) => void;
+
+  // 新增：側欄內建搜尋
+  query: string;
+  onChangeQuery: (v:string)=>void;
 }) {
   // 手機抽屜不使用，但為 API 相容保留
   void onDeleteAlbum; void onUpdateAlbum; void onUploadAlbumCover; void onOpenExport; void onImport;
@@ -554,14 +561,14 @@ function SideDrawer({
   const [editMode, setEditMode] = React.useState(false);
   const [newOpen, setNewOpen] = React.useState(false);
 
-  // 動畫參數
-  const ROW = 44; // 一列的視覺高度：可視需要微調 40~48
+  // 動畫參數（行高估值；可依真實行高調整）
+  const ROW = 44;
 
-  // 專輯拖曳動畫狀態
+  // 拖曳動畫狀態：專輯
   const [dragA, setDragA] = React.useState<{ start: number; dy: number } | null>(null);
   const dA = useDragY();
 
-  // 歌曲拖曳動畫狀態（需記住 albumId）
+  // 拖曳動畫狀態：歌曲（含 albumId）
   const [dragS, setDragS] = React.useState<{ albumId: string; start: number; dy: number } | null>(null);
   const dS = useDragY();
 
@@ -617,31 +624,51 @@ function SideDrawer({
           </div>
         </div>
 
+        {/* 內建搜尋（側欄上方，sticky） */}
+        <div className="sticky top-0 z-[1] border-b bg-white/95 px-2 py-2 backdrop-blur">
+          <form
+            onSubmit={(e)=>{ e.preventDefault(); /* 即時套用，不需額外處理 */ }}
+            className="flex items-center gap-2"
+          >
+            <input
+              placeholder="搜尋：歌名 / 歌詞 / 文法"
+              value={query}
+              onChange={(e)=>onChangeQuery(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring"
+            />
+            <button type="submit" className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-black/5">搜尋</button>
+          </form>
+        </div>
+
         {/* Album + Songs List */}
-        <div className="h-[calc(100%-48px)] overflow-y-auto p-2">
+        <div className="h-[calc(100%-96px)] overflow-y-auto p-2">
           {data.albums.map((a, albumIdx) => {
             const isCollapsed = !!collapsed?.[a.id];
 
-            // 計算專輯項目的 transform（有拖曳就位移＋其他項目讓位）
+            // 專輯行：拖曳動畫（放大＋投影＋讓位）
             let albumTranslate = 0;
             let albumZ = 0;
-            let albumTarget = albumIdx;
-
+            let albumScale = 1;
             if (dragA) {
-              albumTarget = Math.max(0, Math.min(data.albums.length - 1, dragA.start + Math.round(dragA.dy / ROW)));
-              if (albumIdx === dragA.start) { albumTranslate = dragA.dy; albumZ = 10; }
-              else if (albumIdx > dragA.start && albumIdx <= albumTarget) albumTranslate = -ROW;
-              else if (albumIdx < dragA.start && albumIdx >= albumTarget) albumTranslate = ROW;
+              const target = Math.max(0, Math.min(data.albums.length - 1, dragA.start + Math.round(dragA.dy / ROW)));
+              if (albumIdx === dragA.start) {
+                albumTranslate = dragA.dy;
+                albumZ = 10;
+                albumScale = 1.04; // ← 被拖的放大一點
+              } else if (albumIdx > dragA.start && albumIdx <= target) albumTranslate = -ROW;
+              else if (albumIdx < dragA.start && albumIdx >= target) albumTranslate = ROW;
             }
 
-            // 拖曳把手的事件（專輯）
+            // 專輯把手事件（阻止滾動，touchAction: none）
             const onAlbumHandleDown = (e: React.PointerEvent) => {
+              e.preventDefault();
               e.currentTarget.setPointerCapture(e.pointerId);
               dA.setStart(e.clientY);
               setDragA({ start: albumIdx, dy: 0 });
             };
             const onAlbumHandleMove = (e: React.PointerEvent) => {
               if (!dragA) return;
+              e.preventDefault();
               setDragA(prev => prev ? { ...prev, dy: dA.delta(e.clientY) } : prev);
             };
             const onAlbumHandleUp = (e: React.PointerEvent) => {
@@ -655,15 +682,16 @@ function SideDrawer({
             return (
               <div
                 key={a.id}
-                className="mb-2 rounded-lg border will-change-transform"
-                style={{ transform: `translateY(${albumTranslate}px)`, transition: dragA ? 'transform 120ms' : 'transform 180ms', zIndex: albumZ, position: albumZ ? 'relative' : undefined }}
+                className={`mb-2 rounded-lg border will-change-transform ${albumZ ? 'shadow-xl' : ''}`}
+                style={{ transform: `translateY(${albumTranslate}px) scale(${albumScale})`, transition: dragA ? 'transform 90ms' : 'transform 160ms', zIndex: albumZ, position: albumZ ? 'relative' : undefined }}
               >
-                <div className="flex items-center justify-between border-b bg-white/50 p-2">
-                  {/* 專輯排序把手（僅排序模式顯示） */}
+                <div className="flex items-center justify-between border-b bg-white/60 p-2">
+                  {/* 把手（排序模式顯示） */}
                   {sortMode && (
                     <div
-                      className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
+                      className="mr-2 select-none rounded-md border px-2 py-1 text-xs"
                       title="長按上下拖動專輯順序"
+                      style={{ touchAction: 'none' }}
                       onPointerDown={onAlbumHandleDown}
                       onPointerMove={onAlbumHandleMove}
                       onPointerUp={onAlbumHandleUp}
@@ -673,11 +701,26 @@ function SideDrawer({
                     </div>
                   )}
 
-                  <div className="truncate font-medium">{a.title}</div>
-
-                  {/* ▶/▼ 收合（穩健） */}
+                  {/* 專輯資訊：封面＋標題＋日期（補齊手機資訊） */}
                   <button
-                    className="text-xs text-zinc-600"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={()=>{
+                      // 點擊標題區塊開/收合更好按
+                      onToggleCollapse(a.id);
+                    }}
+                  >
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-white/60">
+                      {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-400">無封面</div>}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{a.title}</div>
+                      <div className="truncate text-[11px] text-zinc-500">{normalizeDateSlash(a.releaseDate)}</div>
+                    </div>
+                  </button>
+
+                  {/* ▶/▼ 收合按鈕 */}
+                  <button
+                    className="ml-2 shrink-0 rounded-md border px-1.5 py-1 text-xs hover:bg-black/5"
                     onClick={()=> onToggleCollapse(a.id)}
                     title={isCollapsed ? '展開' : '收合'}
                   >
@@ -688,26 +731,40 @@ function SideDrawer({
                 {!isCollapsed && (
                   <ul className="divide-y">
                     {a.songs.map((s, songIdx) => {
-                      // 計算歌曲項目的 transform（同樣有動畫）
+                      // 歌曲行：拖曳動畫（放大＋投影＋讓位）
                       let songTranslate = 0;
                       let songZ = 0;
-                      let songTarget = songIdx;
+                      let songScale = 1;
                       const draggingThisAlbum = dragS && dragS.albumId === a.id;
-
                       if (draggingThisAlbum) {
-                        songTarget = Math.max(0, Math.min(a.songs.length - 1, dragS.start + Math.round(dragS.dy / ROW)));
-                        if (songIdx === dragS.start) { songTranslate = dragS.dy; songZ = 10; }
-                        else if (songIdx > dragS.start && songIdx <= songTarget) songTranslate = -ROW;
-                        else if (songIdx < dragS.start && songIdx >= songTarget) songTranslate = ROW;
+                        const targetIndex = Math.max(
+                          0,
+                          Math.min(
+                            a.songs.length - 1,
+                            dragS.start + Math.round((dragS.dy || 0) / ROW)
+                          )
+                        );
+
+                        if (songIdx === dragS.start) {
+                          songTranslate = dragS.dy || 0;
+                          songZ = 10;
+                          songScale = 1.03; // 被拖的微放大
+                        } else if (songIdx > dragS.start && songIdx <= targetIndex) {
+                          songTranslate = -ROW; // 被越過的往上讓位
+                        } else if (songIdx < dragS.start && songIdx >= targetIndex) {
+                          songTranslate = ROW;  // 被越過的往下讓位
+                        }
                       }
 
                       const onSongHandleDown = (e: React.PointerEvent) => {
+                        e.preventDefault();
                         e.currentTarget.setPointerCapture(e.pointerId);
                         dS.setStart(e.clientY);
                         setDragS({ albumId: a.id, start: songIdx, dy: 0 });
                       };
                       const onSongHandleMove = (e: React.PointerEvent) => {
                         if (!dragS) return;
+                        e.preventDefault();
                         setDragS(prev => prev ? { ...prev, dy: dS.delta(e.clientY) } : prev);
                       };
                       const onSongHandleUp = (e: React.PointerEvent) => {
@@ -721,14 +778,15 @@ function SideDrawer({
                       return (
                         <li
                           key={s.id}
-                          className="flex items-center justify-between p-2 will-change-transform"
-                          style={{ transform: `translateY(${songTranslate}px)`, transition: draggingThisAlbum ? 'transform 120ms' : 'transform 180ms', zIndex: songZ, position: songZ ? 'relative' : undefined }}
+                          className={`flex items-center justify-between p-2 will-change-transform ${songZ ? 'shadow-md' : ''}`}
+                          style={{ transform: `translateY(${songTranslate}px) scale(${songScale})`, transition: draggingThisAlbum ? 'transform 90ms' : 'transform 160ms', zIndex: songZ, position: songZ ? 'relative' : undefined }}
                         >
-                          {/* 歌曲排序把手（僅排序模式顯示） */}
+                          {/* 把手（排序模式顯示） */}
                           {sortMode && (
                             <div
-                              className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
+                              className="mr-2 select-none rounded-md border px-2 py-1 text-xs"
                               title="長按上下拖動歌曲順序"
+                              style={{ touchAction: 'none' }}
                               onPointerDown={onSongHandleDown}
                               onPointerMove={onSongHandleMove}
                               onPointerUp={onSongHandleUp}
@@ -740,7 +798,8 @@ function SideDrawer({
 
                           <button
                             onClick={()=>onSelect(a.id,s.id)}
-                            className={`flex-1 text-left ${selected?.songId===s.id ? 'font-bold' : ''}`}
+                            className={`flex-1 truncate text-left ${selected?.songId===s.id ? 'font-bold' : ''}`}
+                            title={s.title}
                           >
                             {s.title}
                           </button>
@@ -769,7 +828,6 @@ function SideDrawer({
     </div>
   );
 }
-
 
 
 // ========== AddSongModal with sticky footer ==========
@@ -1251,7 +1309,6 @@ export default function App() {
   const [tab, setTab] = useState<'lyrics' | 'vocab' | 'flash' | 'grammar'>('lyrics');
   const [editMode, setEditMode] = useState(false); // 歌詞編輯預設關閉
   const [query, setQuery] = useState("");
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   // --- 搜尋過濾（桌機與手機側欄共用） ---
 function _norm(s: string){ return (s||"").toLowerCase().trim(); }
 function _songHit(s: Song, q: string){
@@ -1688,91 +1745,47 @@ function importCSV(file: File) {
     <div className="min-h-screen bg-amber-50/40 text-gray-900">
       {/* Top Bar */}
       <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-[1280px] px-4">
-          <div className="flex flex-nowrap items-center gap-2 py-3">
-            <button
-              className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5"
-              title="切換側邊選單"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar();
-                else setDrawerOpen(true);
-              }}
-            >
-              {HAMBURGER} 選單
-            </button>
+  <div className="mx-auto max-w-[1280px] px-4">
+    <div className="flex flex-nowrap items-center gap-2 py-3">
+      <button
+        className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5"
+        title="切換側邊選單"
+        onClick={() => {
+          if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar();
+          else setDrawerOpen(true);
+        }}
+      >
+        {HAMBURGER} 選單
+      </button>
 
-            <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">
-              DAY6 歌詞學韓文
-            </div>
+      <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">
+        DAY6 歌詞學韓文
+      </div>
 
-            {/* 桌機：常駐搜尋 + 匯入/匯出、新增 */}
-            <form
-  className="relative ml-auto hidden items-center gap-2 md:flex"
-  onSubmit={(e)=>{ e.preventDefault(); /* 即時過濾已生效，這裡只阻止跳頁 */ }}
->
-  <input
-    placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
-    value={query}
-    onChange={e=>setQuery(e.target.value)}
-    className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72"
-  />
-  <button type="submit" className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5">搜尋</button>
-  <DropMenu label="匯入 / 匯出" items={CSVMenu} />
-  <DropMenu label="新增" items={NewMenu} />
-</form>
+      {/* 桌機：常駐搜尋 + 匯入/匯出、新增 */}
+      <form
+        className="relative ml-auto hidden items-center gap-2 md:flex"
+        onSubmit={(e)=>{ e.preventDefault(); /* 即時過濾已生效 */ }}
+      >
+        <input
+          placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
+          value={query}
+          onChange={e=>setQuery(e.target.value)}
+          className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72"
+        />
+        <button type="submit" className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5">
+          搜尋
+        </button>
+        <DropMenu label="匯入 / 匯出" items={CSVMenu} />
+        <DropMenu label="新增" items={NewMenu} />
+      </form>
 
+      {/* 手機：這裡不再顯示放大鏡，改在側欄內建搜尋 */}
+      <div className="ml-auto md:hidden" />
+    </div>
+  </div>
+</header>
 
-            {/* 手機：放大鏡 */}
-            <div className="ml-auto flex items-center gap-2 md:hidden">
-              <button
-                className="rounded-lg border px-2 py-1 text-sm hover:bg-black/5"
-                onClick={()=>setMobileSearchOpen(v=>!v)}
-                aria-label="搜尋"
-                title="搜尋"
-              >
-                🔍
-              </button>
-            </div>
-          </div>
-
-          {mobileSearchOpen && (
-            <form
-              className="pb-3 md:hidden"
-              onSubmit={(e) => {
-                e.preventDefault();
-                // 這邊不用另外觸發邏輯：你的列表已經即時用 query 過濾
-                // 提交後就把搜尋框收起來，符合「按下 Enter 就搜尋」的直覺
-                setMobileSearchOpen(false);
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  autoFocus
-                  placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      // 表單 onSubmit 會接手；這裡讓 UX 更像「確認」
-                      (e.currentTarget as HTMLInputElement).blur();
-                    }
-                  }}
-                  className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                />
-                <button
-                  type="submit"
-                  className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-black/5"
-                  aria-label="搜尋"
-                  title="搜尋"
-                >
-                  搜尋
-                </button>
-              </div>
-            </form>
-          )}
-
-        </div>
-      </header>
 
 
       {/* Body */}
@@ -1839,6 +1852,8 @@ function importCSV(file: File) {
         onUploadAlbumCover={uploadAlbumCover}
         onOpenExport={()=>setExportOpen(true)}
         onImport={importCSV}
+        query={query}
+        onChangeQuery={setQuery}
 
       />
 
