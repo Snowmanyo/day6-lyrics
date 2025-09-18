@@ -523,7 +523,6 @@ function useDragY() {
 function SideDrawer({
   open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong,
   sortMode, onToggleSort,                    // <─ 仍保留型別相容，但不再顯示「排序」按鈕
-  editingAlbumId, onToggleAlbumEdit,
   onReorderAlbum, onReorderSong, onDeleteSong, onDeleteAlbum,
   collapsed, onToggleCollapse,
   onUpdateAlbum, onUploadAlbumCover,
