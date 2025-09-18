@@ -520,123 +520,95 @@ function useDragY() {
   return { setStart, delta, end, dragging };
 }
 
+// ===================== Mobile Drawer（與桌機一致：搜尋＋匯入/匯出＋新增＋編輯/刪除＋拖拉排序） =====================
 function SideDrawer({
-  open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong,
-  sortMode, onToggleSort,                    // <─ 仍保留型別相容，但不再顯示「排序」按鈕
+  open, onClose, data, selected, onSelect,
+  onOpenAddAlbum, onOpenAddSong,
+  sortMode, onToggleSort,
+  editingAlbumId, onToggleAlbumEdit,
   onReorderAlbum, onReorderSong, onDeleteSong, onDeleteAlbum,
   collapsed, onToggleCollapse,
   onUpdateAlbum, onUploadAlbumCover,
   onOpenExport, onImport,
-  query, onChangeQuery
+  query, onChangeQuery,
 }: {
   open: boolean; onClose: () => void;
   data: AppData;
   selected: { albumId: string; songId: string } | null;
   onSelect: (albumId: string, songId: string) => void;
+
   onOpenAddAlbum: () => void; onOpenAddSong: (albumId: string) => void;
 
-  sortMode: boolean; onToggleSort: () => void;   // <─ 不使用，為了不破壞呼叫端
+  sortMode: boolean; onToggleSort: () => void;
   editingAlbumId: string | null; onToggleAlbumEdit: (id: string | null) => void;
+
   onReorderAlbum: (from: number, to: number) => void;
   onReorderSong: (albumId: string, from: number, to: number) => void;
+
   onDeleteSong: (albumId: string, songId: string) => void;
   onDeleteAlbum: (albumId: string) => void;
+
   collapsed: Record<string, boolean>;
   onToggleCollapse: (albumId: string) => void;
+
   onUpdateAlbum: (albumId: string, patch: Partial<Album>) => void;
   onUploadAlbumCover: (albumId: string, file: File) => void;
+
   onOpenExport: () => void;
   onImport: (file: File) => void;
 
   query: string;
-  onChangeQuery: (v:string)=>void;
+  onChangeQuery: (v: string) => void;
 }) {
-  // 仍未使用的 props（保留 API 相容）
-  void sortMode; void onToggleSort;
-  void onUpdateAlbum; void onUploadAlbumCover; void onOpenExport;
+  // === 拖曳動畫狀態（專輯 / 歌曲） ===
+  const ROW = 44; // 視覺行高（影響位移敏感度）
+  const [albumDrag, setAlbumDrag] = React.useState<{ start: number; dy: number } | null>(null);
+  const albumStartY = React.useRef(0);
 
-  // 編輯模式（手機：僅保留「✎ 編輯」此一開關，進入後同時啟用拖曳把手與刪除）
-  const [editMode, setEditMode] = React.useState(false);
-  const [newOpen, setNewOpen] = React.useState(false);
+  const [songDrag, setSongDrag] = React.useState<{ albumId: string; start: number; dy: number } | null>(null);
+  const songStartY = React.useRef(0);
 
-  // 動畫參數
-  const ROW = 44;
+  const beginDrag = (e: React.PointerEvent, setY: React.MutableRefObject<number>) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setY.current = e.clientY;
+    document.body.style.userSelect = 'none';
+  };
+  const moveDrag = (e: React.PointerEvent, setState: React.Dispatch<React.SetStateAction<any>>, getY: React.MutableRefObject<number>, patch: (dy: number)=>any) => {
+    e.preventDefault();
+    const dy = e.clientY - getY.current;
+    setState(prev => prev ? { ...prev, ...patch(dy) } : prev);
+  };
+  const endDrag = (e: React.PointerEvent, clear: ()=>void) => {
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    document.body.style.userSelect = '';
+    clear();
+  };
 
-  // 拖曳動畫狀態：專輯
-  const [dragA, setDragA] = React.useState<{ start: number; dy: number } | null>(null);
-  const dA = useDragY();
-
-  // 拖曳動畫狀態：歌曲（含 albumId）
-  const [dragS, setDragS] = React.useState<{ albumId: string; start: number; dy: number } | null>(null);
-  const dS = useDragY();
-
+  // === 側欄容器 ===
   return (
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <div className={`absolute left-0 top-0 h-full w-[85vw] max-w-[320px] transform bg-white shadow-2xl transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}>
 
-        {/* Header */}
+        {/* Header：與桌機一致，提供排序切換 */}
         <div className="flex items-center justify-between gap-2 border-b p-3">
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
-            {/* ✏️ 編輯切換（唯一開關） */}
             <button
-              onClick={() => setEditMode(v => !v)}
-              className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${editMode ? 'bg-black/5' : ''}`}
-              title="切換編輯模式"
+              onClick={() => { if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
+              className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${sortMode ? 'bg-black/5' : ''}`}
+              title="切換排序模式（拖曳把手移動）"
             >
-              {editMode ? '完成' : '✎ 編輯'}
+              {sortMode ? '完成' : '排序'}
             </button>
-
-            {/* 新增 / 匯入 下拉 */}
-            <div className="relative">
-              <button
-                className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
-                onClick={(e)=>{ e.stopPropagation(); setNewOpen(v=>!v); }}
-                title="新增 / 匯入"
-              >
-                新增
-              </button>
-              {newOpen && (
-                <div className="absolute right-0 z-[9999] mt-1 w-44 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
-                  <button
-                    className="block w-full px-3 py-1 text-left hover:bg-black/5"
-                    onClick={()=>{ setNewOpen(false); onOpenAddSong(selected?.albumId || data.albums[0]?.id || ""); }}
-                  >
-                    新增歌曲
-                  </button>
-                  <button
-                    className="block w-full px-3 py-1 text-left hover:bg-black/5"
-                    onClick={()=>{ setNewOpen(false); onOpenAddAlbum(); }}
-                  >
-                    新增專輯
-                  </button>
-                  <div className="my-1 border-t" />
-                  {/* 匯入（XLSX / TXT） */}
-                  <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
-                    匯入（XLSX / TXT）
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".xlsx,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) onImport(f);
-                        (e.target as HTMLInputElement).value = "";
-                        setNewOpen(false);
-                      }}
-                    />
-                  </label>
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
-        {/* 內建搜尋（側欄上方，sticky） */}
+        {/* Sticky 工具列：搜尋 + 匯入/匯出 + 新增（和桌機工具組一致，但收納在側欄） */}
         <div className="sticky top-0 z-[1] border-b bg-white/95 px-2 py-2 backdrop-blur">
           <form
-            onSubmit={(e)=>{ e.preventDefault(); /* 即時過濾，提交僅收起鍵盤 */ }}
+            onSubmit={(e)=>{ e.preventDefault(); /* 即時過濾已生效 */ }}
             className="flex items-center gap-2"
           >
             <input
@@ -647,172 +619,260 @@ function SideDrawer({
             />
             <button type="submit" className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-black/5">搜尋</button>
           </form>
+          <div className="mt-2 flex items-center gap-2">
+            {/* 匯入 / 匯出（內建） */}
+            <DropMenu
+              label="匯入 / 匯出"
+              items={
+                <>
+                  <button
+                    className="block w-full px-3 py-1 text-left hover:bg-black/5"
+                    onClick={()=>onOpenExport()}
+                  >
+                    匯出（自訂欄位，XLSX）
+                  </button>
+                  <div className="my-1 border-t" />
+                  <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
+                    匯入（XLSX / TXT）
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".xlsx,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) onImport(f);
+                        (e.target as HTMLInputElement).value = "";
+                      }}
+                    />
+                  </label>
+                </>
+              }
+            />
+            {/* 新增（和桌機一致） */}
+            <DropMenu
+              label="新增"
+              items={
+                <>
+                  <button className="block w-full px-3 py-1 text-left hover:bg-black/5"
+                          onClick={()=>onOpenAddSong(selected?.albumId || data.albums[0]?.id || "")}>
+                    新增歌曲
+                  </button>
+                  <button className="block w-full px-3 py-1 text-left hover:bg-black/5"
+                          onClick={()=>onOpenAddAlbum()}>
+                    新增專輯
+                  </button>
+                </>
+              }
+            />
+          </div>
         </div>
 
-        {/* Album + Songs List */}
-        <div className="h-[calc(100%-96px)] overflow-y-auto p-2">
+        {/* Album + Songs List（與桌機資訊一致：封面／標題／日期＋編輯面板） */}
+        <div className="h-[calc(100%-140px)] overflow-y-auto p-2">
           {data.albums.map((a, albumIdx) => {
-            const isCollapsed = !!collapsed?.[a.id];
+            const editing = editingAlbumId === a.id;
+            const isCollapsed = !!collapsed[a.id];
 
-            // 專輯行：拖曳動畫（放大＋投影＋讓位）
+            // === 專輯行的拖曳動畫（只在 sortMode 顯示把手並可拖拉） ===
             let albumTranslate = 0, albumZ = 0, albumScale = 1;
-            if (dragA) {
-              const target = Math.max(0, Math.min(data.albums.length - 1, dragA.start + Math.round(dragA.dy / ROW)));
-              if (albumIdx === dragA.start) {
-                albumTranslate = dragA.dy;
-                albumZ = 10;
-                albumScale = 1.04;
-              } else if (albumIdx > dragA.start && albumIdx <= target) albumTranslate = -ROW;
-              else if (albumIdx < dragA.start && albumIdx >= target) albumTranslate = ROW;
+            let albumTargetIdx = albumIdx;
+            if (albumDrag) {
+              albumTargetIdx = Math.max(0, Math.min(data.albums.length - 1, albumDrag.start + Math.round(albumDrag.dy / ROW)));
+              if (albumIdx === albumDrag.start) { albumTranslate = albumDrag.dy; albumZ = 10; albumScale = 1.04; }
+              else if (albumIdx > albumDrag.start && albumIdx <= albumTargetIdx) albumTranslate = -ROW;
+              else if (albumIdx < albumDrag.start && albumIdx >= albumTargetIdx) albumTranslate = ROW;
             }
 
-            // 專輯把手（只在「編輯模式」顯示）
             const onAlbumHandleDown = (e: React.PointerEvent) => {
-              e.preventDefault();
-              e.currentTarget.setPointerCapture(e.pointerId);
-              dA.setStart(e.clientY);
-              setDragA({ start: albumIdx, dy: 0 });
+              if (!sortMode) return;
+              beginDrag(e, albumStartY);
+              setAlbumDrag({ start: albumIdx, dy: 0 });
             };
             const onAlbumHandleMove = (e: React.PointerEvent) => {
-              if (!dragA) return;
-              e.preventDefault();
-              setDragA(prev => prev ? { ...prev, dy: dA.delta(e.clientY) } : prev);
+              if (!sortMode || !albumDrag) return;
+              moveDrag(e, setAlbumDrag, albumStartY, (dy)=>({ dy }));
             };
             const onAlbumHandleUp = (e: React.PointerEvent) => {
-              if (!dragA) return;
-              const target = Math.max(0, Math.min(data.albums.length - 1, dragA.start + Math.round(dA.delta(e.clientY) / ROW)));
-              if (target !== dragA.start) onReorderAlbum(dragA.start, target);
-              dA.end(); setDragA(null);
-              e.currentTarget.releasePointerCapture(e.pointerId);
+              if (!sortMode || !albumDrag) return endDrag(e, ()=>setAlbumDrag(prev => {
+                if (!prev) return null;
+                const to = Math.max(0, Math.min(data.albums.length - 1, prev.start + Math.round(prev.dy / ROW)));
+                if (to !== prev.start) onReorderAlbum(prev.start, to);
+                return null;
+              }));
+              endDrag(e, ()=>setAlbumDrag(null));
             };
 
             return (
               <div
                 key={a.id}
                 className={`mb-2 rounded-lg border will-change-transform ${albumZ ? 'shadow-xl' : ''}`}
-                style={{ transform: `translateY(${albumTranslate}px) scale(${albumScale})`, transition: dragA ? 'transform 90ms' : 'transform 160ms', zIndex: albumZ, position: albumZ ? 'relative' : undefined }}
+                style={{ transform: `translateY(${albumTranslate}px) scale(${albumScale})`, transition: albumDrag ? 'transform 90ms' : 'transform 160ms', zIndex: albumZ, position: albumZ ? 'relative' : undefined }}
               >
-                <div className="flex items-center gap-2 border-b bg-white/60 p-2">
-                  {/* 把手（編輯模式才顯示） */}
-                  {editMode && (
-                    <div
-                      className="select-none rounded-md border px-2 py-1 text-xs"
-                      title="長按上下拖動專輯順序"
-                      style={{ touchAction: 'none' }}
-                      onPointerDown={onAlbumHandleDown}
-                      onPointerMove={onAlbumHandleMove}
-                      onPointerUp={onAlbumHandleUp}
-                      onPointerCancel={onAlbumHandleUp}
-                    >
-                      ≡
-                    </div>
-                  )}
-
-                  {/* 專輯資訊（點擊切換收合） */}
-                  <button
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    onClick={() => onToggleCollapse(a.id)}
-                  >
-                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-white/60">
-                      {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-400">無封面</div>}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{a.title}</div>
-                      <div className="truncate text-[11px] text-zinc-500">{normalizeDateSlash(a.releaseDate)}</div>
-                    </div>
-                  </button>
-
-                  {/* 收合 / 刪除（刪除只在編輯模式顯示） */}
-                  <div className="ml-1 flex shrink-0 items-center gap-1">
-                    <button
-                      className="rounded-md border px-1.5 py-1 text-xs hover:bg-black/5"
-                      onClick={()=> onToggleCollapse(a.id)}
-                      title={isCollapsed ? '展開' : '收合'}
-                    >
-                      {isCollapsed ? '▶' : '▼'}
-                    </button>
-                    {editMode && (
+                {/* Header（和桌機對齊：資訊＋編輯/排序控制） */}
+                {!editing ? (
+                  <div className="mb-2 flex items-center justify-between gap-2 border-b bg-white/60 p-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {/* 拖曳把手（排序模式才顯示） */}
+                      {sortMode && (
+                        <div
+                          className="shrink-0 select-none rounded-md border px-2 py-1 text-xs"
+                          style={{ touchAction: 'none' }}
+                          title="長按上下拖動專輯順序"
+                          onPointerDown={onAlbumHandleDown}
+                          onPointerMove={onAlbumHandleMove}
+                          onPointerUp={onAlbumHandleUp}
+                          onPointerCancel={onAlbumHandleUp}
+                        >≡</div>
+                      )}
+                      {/* 封面 + 標題 + 日期 */}
                       <button
-                        className="rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
-                        title="刪除專輯"
-                        onClick={()=>{
-                          if (confirm(`確定要刪除專輯「${a.title}」？此動作會刪除底下所有歌曲。`)) onDeleteAlbum(a.id);
-                        }}
+                        onClick={()=>onToggleCollapse(a.id)}
+                        className="flex min-w-0 items-center gap-2 text-left"
+                        title={isCollapsed ? '展開' : '收合'}
                       >
-                        刪除
+                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-white/60">
+                          {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-400">無封面</div>}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{a.title}</div>
+                          <div className="truncate text-[11px] text-zinc-500">{normalizeDateSlash(a.releaseDate)}</div>
+                        </div>
                       </button>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
+                    <div className="flex items-center gap-1">
+                      {/* 收合按鈕 */}
+                      <button
+                        onClick={()=>onToggleCollapse(a.id)}
+                        className="rounded-md border px-1.5 py-1 text-xs hover:bg-black/5"
+                      >
+                        {isCollapsed ? '▶' : '▼'}
+                      </button>
+                      {/* 編輯專輯（與桌機一致） */}
+                      {!sortMode && (
+                        <button
+                          onClick={()=>onToggleAlbumEdit(a.id)}
+                          className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
+                          title="編輯專輯"
+                        >✎</button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  // 編輯模式（和桌機一致：可改名、日期、上傳/清除封面、刪除專輯）
+                  <div className="mb-2 space-y-2 border-b bg-white/60 p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-white/60">
+                          {a.cover ? <img src={a.cover} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-400">無封面</div>}
+                        </div>
+                        <div className="min-w-0">
+                          <input
+                            value={a.title}
+                            onChange={e=>onUpdateAlbum(a.id,{title:e.target.value})}
+                            className="w-full truncate rounded-md border px-2 py-1 text-sm font-medium"
+                          />
+                          <input
+                            type="date"
+                            value={a.releaseDate}
+                            onChange={e=>onUpdateAlbum(a.id,{releaseDate:e.target.value})}
+                            className="mt-1 w-full truncate rounded-md border px-2 py-1 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={()=>onToggleAlbumEdit(null)}
+                        className="shrink-0 rounded-lg border px-2 py-1 text-xs hover:bg-black/5"
+                        title="完成編輯"
+                      >完成</button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="cursor-pointer rounded-lg border px-2 py-1 text-xs hover:bg-black/5">
+                        上傳封面
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e=>{ const f=e.target.files?.[0]; if (f) onUploadAlbumCover(a.id, f); }} />
+                      </label>
+                      {a.cover && (
+                        <button onClick={()=>onUpdateAlbum(a.id,{cover:""})}
+                                className="rounded-lg border px-2 py-1 text-xs hover:bg-black/5">
+                          清除封面
+                        </button>
+                      )}
+                      <button
+                        onClick={()=>{ if (confirm(`確定要刪除專輯「${a.title}」？此操作將刪除底下所有歌曲。`)) onDeleteAlbum(a.id); }}
+                        className="rounded-lg border px-2 py-1 text-xs text-red-600 hover:bg-black/5"
+                      >
+                        刪除專輯
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Songs（可收合） */}
                 {!isCollapsed && (
                   <ul className="divide-y">
                     {a.songs.map((s, songIdx) => {
-                      // 歌曲拖曳動畫
+                      // === 歌曲行拖曳動畫（只在 sortMode 顯示把手並可拖拉） ===
                       let songTranslate = 0, songZ = 0, songScale = 1;
-                      const draggingThisAlbum = dragS && dragS.albumId === a.id;
+                      const draggingThisAlbum = !!songDrag && songDrag.albumId === a.id;
+                      let targetIndex = songIdx;
                       if (draggingThisAlbum) {
-                        const targetIndex = Math.max(0, Math.min(a.songs.length - 1, dragS.start + Math.round((dragS.dy || 0) / ROW)));
-                        if (songIdx === dragS.start) {
-                          songTranslate = dragS.dy || 0;
-                          songZ = 10;
-                          songScale = 1.03;
-                        } else if (songIdx > dragS.start && songIdx <= targetIndex) songTranslate = -ROW;
-                        else if (songIdx < dragS.start && songIdx >= targetIndex) songTranslate = ROW;
+                        targetIndex = Math.max(0, Math.min(a.songs.length - 1, songDrag.start + Math.round((songDrag.dy||0) / ROW)));
+                        if (songIdx === songDrag.start) { songTranslate = songDrag.dy||0; songZ = 10; songScale = 1.03; }
+                        else if (songIdx > songDrag.start && songIdx <= targetIndex) songTranslate = -ROW;
+                        else if (songIdx < songDrag.start && songIdx >= targetIndex) songTranslate = ROW;
                       }
 
                       const onSongHandleDown = (e: React.PointerEvent) => {
-                        e.preventDefault();
-                        e.currentTarget.setPointerCapture(e.pointerId);
-                        dS.setStart(e.clientY);
-                        setDragS({ albumId: a.id, start: songIdx, dy: 0 });
+                        if (!sortMode) return;
+                        beginDrag(e, songStartY);
+                        setSongDrag({ albumId: a.id, start: songIdx, dy: 0 });
                       };
                       const onSongHandleMove = (e: React.PointerEvent) => {
-                        if (!dragS) return;
-                        e.preventDefault();
-                        setDragS(prev => prev ? { ...prev, dy: dS.delta(e.clientY) } : prev);
+                        if (!sortMode || !songDrag) return;
+                        moveDrag(e, setSongDrag, songStartY, (dy)=>({ dy }));
                       };
                       const onSongHandleUp = (e: React.PointerEvent) => {
-                        if (!dragS) return;
-                        const target = Math.max(0, Math.min(a.songs.length - 1, dragS.start + Math.round(dS.delta(e.clientY) / ROW)));
-                        if (target !== dragS.start) onReorderSong(a.id, dragS.start, target);
-                        dS.end(); setDragS(null);
-                        e.currentTarget.releasePointerCapture(e.pointerId);
+                        if (!sortMode || !songDrag) return endDrag(e, ()=>setSongDrag(null));
+                        endDrag(e, ()=>setSongDrag(prev => {
+                          if (!prev) return null;
+                          const to = Math.max(0, Math.min(a.songs.length - 1, prev.start + Math.round((prev.dy||0) / ROW)));
+                          if (to !== prev.start) onReorderSong(a.id, prev.start, to);
+                          return null;
+                        }));
                       };
 
                       return (
                         <li
                           key={s.id}
                           className={`flex items-center justify-between p-2 will-change-transform ${songZ ? 'shadow-md' : ''}`}
-                          style={{ transform: `translateY(${songTranslate}px) scale(${songScale})`, transition: draggingThisAlbum ? 'transform 90ms' : 'transform 160ms', zIndex: songZ, position: songZ ? 'relative' : undefined }}
+                          style={{ transform: `translateY(${songTranslate}px) scale(${songScale})`, transition: songDrag ? 'transform 90ms' : 'transform 160ms', zIndex: songZ, position: songZ ? 'relative' : undefined }}
                         >
-                          {/* 把手（編輯模式顯示） */}
-                          {editMode && (
+                          {/* 把手（排序模式才顯示） */}
+                          {sortMode && (
                             <div
                               className="mr-2 select-none rounded-md border px-2 py-1 text-xs"
-                              title="長按上下拖動歌曲順序"
                               style={{ touchAction: 'none' }}
+                              title="長按上下拖動歌曲順序"
                               onPointerDown={onSongHandleDown}
                               onPointerMove={onSongHandleMove}
                               onPointerUp={onSongHandleUp}
                               onPointerCancel={onSongHandleUp}
-                            >
-                              ≡
-                            </div>
+                            >≡</div>
                           )}
 
                           <button
-                            onClick={()=>onSelect(a.id,s.id)}
+                            onClick={()=>onSelect(a.id, s.id)}
                             className={`flex-1 truncate text-left ${selected?.songId===s.id ? 'font-bold' : ''}`}
                             title={s.title}
                           >
                             {s.title}
                           </button>
 
-                          {/* 刪除歌曲（編輯模式顯示） */}
-                          {editMode && (
+                          {/* 刪歌（僅在編輯專輯時顯示，與桌機一致） */}
+                          {editing && !sortMode && (
                             <button
-                              onClick={()=>onDeleteSong(a.id,s.id)}
+                              onClick={()=>onDeleteSong(a.id, s.id)}
                               className="ml-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs text-red-600 hover:bg-black/5"
                               title="刪除此歌曲"
                             >
@@ -822,7 +882,9 @@ function SideDrawer({
                         </li>
                       );
                     })}
-                    {a.songs.length===0 && <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>}
+                    {a.songs.length===0 && (
+                      <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>
+                    )}
                   </ul>
                 )}
               </div>
@@ -833,6 +895,7 @@ function SideDrawer({
     </div>
   );
 }
+
 
 
 
