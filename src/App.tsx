@@ -508,6 +508,48 @@ function DesktopSidebar({
   );
 }
 
+// === 拖曳小工具：用 Pointer Events 做「跨 iOS/Android/桌機」的穩定排序 ===
+function useReorderDrag(onMovePrev: () => void, onMoveNext: () => void) {
+  const dragging = React.useRef(false);
+  const lastY = React.useRef(0);
+  const buffer = React.useRef(0);
+  const STEP = 28; // 超過這個位移就觸發一次移動（可依行高微調）
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    dragging.current = true;
+    lastY.current = e.clientY;
+    buffer.current = 0;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    // 阻止選字/長按選取，避免反白
+    document.body.style.userSelect = 'none';
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const dy = e.clientY - lastY.current;
+    lastY.current = e.clientY;
+    buffer.current += dy;
+
+    while (buffer.current >= STEP) {
+      onMoveNext();
+      buffer.current -= STEP;
+    }
+    while (buffer.current <= -STEP) {
+      onMovePrev();
+      buffer.current += STEP;
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    dragging.current = false;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    document.body.style.userSelect = '';
+    buffer.current = 0;
+  };
+
+  return { onPointerDown, onPointerMove, onPointerUp };
+}
+
 // ===================== Mobile Drawer（RWD） =====================
 function SideDrawer({
   open, onClose, data, selected, onSelect, onOpenAddAlbum, onOpenAddSong,
@@ -537,18 +579,16 @@ function SideDrawer({
   onOpenExport: () => void;
   onImport: (file: File) => void;
 }) {
-  // ★ 這行是為了壓掉 TS6133（宣告未使用），不要刪
+  // 這行是為了壓掉 TS6133（宣告未使用），保留 API 相容性但不在手機抽屜用到
   void onDeleteAlbum; void onUpdateAlbum; void onUploadAlbumCover; void onOpenExport; void onImport;
 
-  const [dragAlbumIdx, setDragAlbumIdx] = useState<number|null>(null);
-  const [dragSong, setDragSong] = useState<{ albumId: string; idx: number } | null>(null);
-  const [newOpen, setNewOpen] = useState(false);
+  const [newOpen, setNewOpen] = React.useState(false);
 
   return (
     <div className={`fixed inset-0 z-[9000] md:hidden ${open ? '' : 'pointer-events-none'}`}>
       <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <div className={`absolute left-0 top-0 h-full w-[85vw] max-w-[320px] transform bg-white shadow-2xl transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        
+
         {/* Header */}
         <div className="flex items-center justify-between gap-2 border-b p-3">
           <div className="font-semibold">專輯 / 歌曲</div>
@@ -594,31 +634,30 @@ function SideDrawer({
         <div className="h-[calc(100%-48px)] overflow-y-auto p-2">
           {data.albums.map((a, albumIdx) => {
             const collapsedAlbum = collapsed[a.id];
+
+            // 專輯把手（只有在 sortMode 顯示）
+            const albumDrag = useReorderDrag(
+              () => { if (albumIdx > 0) onReorderAlbum(albumIdx, albumIdx - 1); },
+              () => { if (albumIdx < data.albums.length - 1) onReorderAlbum(albumIdx, albumIdx + 1); }
+            );
+
             return (
               <div key={a.id} className="mb-2 rounded-lg border">
                 <div className="flex items-center justify-between border-b bg-white/50 p-2">
-                  {/* 專輯排序把手 */}
                   {sortMode && (
                     <div
                       className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
                       title="長按上下拖動專輯順序"
-                      onPointerDown={(e)=>{e.currentTarget.setPointerCapture(e.pointerId); setDragAlbumIdx(albumIdx);}}
-                      onPointerUp={()=>setDragAlbumIdx(null)}
-                      onPointerMove={(e)=>{ 
-                        if(dragAlbumIdx===null) return; 
-                        const dy=e.movementY; 
-                        if(dy>20 && albumIdx<data.albums.length-1){
-                          onReorderAlbum(albumIdx,albumIdx+1); setDragAlbumIdx(albumIdx+1);
-                        } 
-                        if(dy<-20 && albumIdx>0){
-                          onReorderAlbum(albumIdx,albumIdx-1); setDragAlbumIdx(albumIdx-1);
-                        } 
-                      }}
+                      onPointerDown={albumDrag.onPointerDown}
+                      onPointerMove={albumDrag.onPointerMove}
+                      onPointerUp={albumDrag.onPointerUp}
                     >
                       ≡
                     </div>
                   )}
+
                   <div className="truncate font-medium">{a.title}</div>
+
                   <button className="text-xs text-zinc-500" onClick={()=>onToggleCollapse(a.id)}>
                     {collapsedAlbum ? '▶' : '▼'}
                   </button>
@@ -626,35 +665,47 @@ function SideDrawer({
 
                 {!collapsedAlbum && (
                   <ul className="divide-y">
-                    {a.songs.map((s, songIdx) => (
-                      <li key={s.id} className="flex items-center justify-between p-2">
-                        {/* 歌曲排序把手 */}
-                        {sortMode && (
-                          <div
-                            className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
-                            title="長按上下拖動歌曲順序"
-                            onPointerDown={(e)=>{e.currentTarget.setPointerCapture(e.pointerId); setDragSong({albumId:a.id,idx:songIdx});}}
-                            onPointerUp={()=>setDragSong(null)}
-                            onPointerMove={(e)=>{ 
-                              if(!dragSong) return; 
-                              const dy=e.movementY; 
-                              if(dy>20 && songIdx<a.songs.length-1){
-                                onReorderSong(a.id,songIdx,songIdx+1); setDragSong({albumId:a.id,idx:songIdx+1});
-                              } 
-                              if(dy<-20 && songIdx>0){
-                                onReorderSong(a.id,songIdx,songIdx-1); setDragSong({albumId:a.id,idx:songIdx-1});
-                              } 
-                            }}
+                    {a.songs.map((s, songIdx) => {
+                      // 歌曲把手（只有在 sortMode 顯示）
+                      const songDrag = useReorderDrag(
+                        () => { if (songIdx > 0) onReorderSong(a.id, songIdx, songIdx - 1); },
+                        () => { if (songIdx < a.songs.length - 1) onReorderSong(a.id, songIdx, songIdx + 1); }
+                      );
+
+                      return (
+                        <li key={s.id} className="flex items-center justify-between p-2">
+                          {sortMode && (
+                            <div
+                              className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
+                              title="長按上下拖動歌曲順序"
+                              onPointerDown={songDrag.onPointerDown}
+                              onPointerMove={songDrag.onPointerMove}
+                              onPointerUp={songDrag.onPointerUp}
+                            >
+                              ≡
+                            </div>
+                          )}
+
+                          <button
+                            onClick={()=>onSelect(a.id,s.id)}
+                            className={`flex-1 text-left ${selected?.songId===s.id ? 'font-bold' : ''}`}
                           >
-                            ≡
-                          </div>
-                        )}
-                        <button onClick={()=>onSelect(a.id,s.id)} className={`flex-1 text-left ${selected?.songId===s.id?'font-bold':''}`}>
-                          {s.title}
-                        </button>
-                        <button onClick={()=>onDeleteSong(a.id,s.id)} className="ml-2 text-xs text-red-600">×</button>
-                      </li>
-                    ))}
+                            {s.title}
+                          </button>
+
+                          {/* 刪除鍵（僅在非排序模式時給刪除；若你不想顯示，可移除此顆） */}
+                          {!sortMode && (
+                            <button
+                              onClick={()=>onDeleteSong(a.id,s.id)}
+                              className="ml-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs text-red-600 hover:bg-black/5"
+                              title="刪除此歌曲"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -665,6 +716,7 @@ function SideDrawer({
     </div>
   );
 }
+
 
 
 // ========== AddSongModal with sticky footer ==========
@@ -1600,18 +1652,43 @@ function importCSV(file: File) {
             </div>
           </div>
 
-          {/* 手機：點放大鏡才出現的搜尋框 */}
+          /* 手機：點放大鏡才出現的搜尋框 */
           {mobileSearchOpen && (
-            <div className="pb-3 md:hidden">
-              <input
-                autoFocus
-                placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
-                value={query}
-                onChange={e=>setQuery(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-              />
-            </div>
+            <form
+              className="pb-3 md:hidden"
+              onSubmit={(e) => {
+                e.preventDefault();
+                // 這邊不用另外觸發邏輯：你的列表已經即時用 query 過濾
+                // 提交後就把搜尋框收起來，符合「按下 Enter 就搜尋」的直覺
+                setMobileSearchOpen(false);
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      // 表單 onSubmit 會接手；這裡讓 UX 更像「確認」
+                      (e.currentTarget as HTMLInputElement).blur();
+                    }
+                  }}
+                  className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
+                />
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-black/5"
+                  aria-label="搜尋"
+                  title="搜尋"
+                >
+                  搜尋
+                </button>
+              </div>
+            </form>
           )}
+
         </div>
       </header>
 
