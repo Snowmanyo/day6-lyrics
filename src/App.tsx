@@ -509,10 +509,11 @@ function DesktopSidebar({
 }
 
 // === 跨 iOS/Android/桌機穩定拖曳：依總位移直接算目標索引（可一次跨多格） ===
-function useIndexDrag(params: { index: number; max: number; onMove: (to: number) => void }) {
+// === 拖曳（按下→放開時計算最終目標索引；可一次跨多格） ===
+function useDragToIndex(startIndex: number, max: number, onDrop: (toIndex: number)=>void) {
   const startY = React.useRef(0);
   const active = React.useRef(false);
-  const ROW = 40; // 每一列大約高度（可視狀況微調 36~44）
+  const ROW = 44; // 行高估值；若太敏感/不夠敏感，調 40~48
 
   const onPointerDown = (e: React.PointerEvent) => {
     active.current = true;
@@ -520,20 +521,21 @@ function useIndexDrag(params: { index: number; max: number; onMove: (to: number)
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     document.body.style.userSelect = 'none';
   };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!active.current) return;
-    const dy = e.clientY - startY.current;
-    const delta = Math.round(dy / ROW); // 依總位移算出「跨了幾格」
-    const target = Math.min(params.max, Math.max(0, params.index + delta));
-    if (target !== params.index) params.onMove(target); // 只在目標索引改變時觸發一次
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onPointerMove = (_e: React.PointerEvent) => { /* 不即時搬動，避免位移亂跳 */ };
+  const finish = (e: React.PointerEvent) => {
+    if (active.current) {
+      const dy = e.clientY - startY.current;
+      const delta = Math.round(dy / ROW);
+      const target = Math.max(0, Math.min(max, startIndex + delta));
+      if (target !== startIndex) onDrop(target);
+    }
     active.current = false;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     document.body.style.userSelect = '';
   };
-  return { onPointerDown, onPointerMove, onPointerUp };
+  return { onPointerDown, onPointerMove, onPointerUp: finish, onPointerCancel: finish };
 }
+
 
 // ===================== Mobile Drawer（RWD） =====================
 function SideDrawer({
@@ -564,8 +566,11 @@ function SideDrawer({
   onOpenExport: () => void;
   onImport: (file: File) => void;
 }) {
-  // 壓掉 TS 未使用（保留 API 相容）：手機抽屜不使用這些
+  // 這些在手機抽屜沒用，但為了 API 一致保留
   void onDeleteAlbum; void onUpdateAlbum; void onUploadAlbumCover; void onOpenExport; void onImport;
+
+  // ✏️ 手機側欄也有編輯開關（預設關閉）
+  const [editMode, setEditMode] = React.useState(false);
 
   const [newOpen, setNewOpen] = React.useState(false);
 
@@ -578,8 +583,18 @@ function SideDrawer({
         <div className="flex items-center justify-between gap-2 border-b p-3">
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
+            {/* ✏️ 編輯切換（預設不是編輯） */}
             <button
-              onClick={() => { if (editingAlbumId) onToggleAlbumEdit(null); if (sortMode) onToggleSort(); else onToggleSort(); }}
+              onClick={() => setEditMode(v => !v)}
+              className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${editMode ? 'bg-black/5' : ''}`}
+              title="切換編輯模式"
+            >
+              {editMode ? '完成' : '✎ 編輯'}
+            </button>
+
+            {/* ↕️ 排序切換 */}
+            <button
+              onClick={() => { if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
               className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${sortMode ? 'bg-black/5' : ''}`}
               title="切換排序模式（上下移動）"
             >
@@ -597,16 +612,12 @@ function SideDrawer({
               </button>
               {newOpen && (
                 <div className="absolute right-0 z-[9999] mt-1 w-40 overflow-hidden rounded-lg border bg-white py-1 text-sm shadow-xl">
-                  <button
-                    className="block w-full px-3 py-1 text-left hover:bg-black/5"
-                    onClick={()=>{ setNewOpen(false); onOpenAddSong(selected?.albumId || data.albums[0]?.id || ""); }}
-                  >
+                  <button className="block w-full px-3 py-1 text-left hover:bg-black/5"
+                          onClick={()=>{ setNewOpen(false); onOpenAddSong(selected?.albumId || data.albums[0]?.id || ""); }}>
                     新增歌曲
                   </button>
-                  <button
-                    className="block w-full px-3 py-1 text-left hover:bg-black/5"
-                    onClick={()=>{ setNewOpen(false); onOpenAddAlbum(); }}
-                  >
+                  <button className="block w-full px-3 py-1 text-left hover:bg-black/5"
+                          onClick={()=>{ setNewOpen(false); onOpenAddAlbum(); }}>
                     新增專輯
                   </button>
                 </div>
@@ -618,18 +629,17 @@ function SideDrawer({
         {/* Album + Songs List */}
         <div className="h-[calc(100%-48px)] overflow-y-auto p-2">
           {data.albums.map((a, albumIdx) => {
-            const collapsedAlbum = collapsed?.[a.id] ?? false; // ← 避免 collapsed 未定義導致白屏
+            const isCollapsed = !!collapsed?.[a.id];
 
-            // 專輯把手（sortMode 才顯示）
-            const albumDrag = useIndexDrag({
-              index: albumIdx,
-              max: data.albums.length - 1,
-              onMove: (to) => { if (to !== albumIdx) onReorderAlbum(albumIdx, to); }
+            // 專輯拖曳（放開時計算最終目標；可一次跨多格）
+            const albumDrag = useDragToIndex(albumIdx, data.albums.length - 1, (to) => {
+              if (to !== albumIdx) onReorderAlbum(albumIdx, to);
             });
 
             return (
               <div key={a.id} className="mb-2 rounded-lg border">
                 <div className="flex items-center justify-between border-b bg-white/50 p-2">
+                  {/* 專輯排序把手（僅排序模式顯示） */}
                   {sortMode && (
                     <div
                       className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
@@ -637,6 +647,7 @@ function SideDrawer({
                       onPointerDown={albumDrag.onPointerDown}
                       onPointerMove={albumDrag.onPointerMove}
                       onPointerUp={albumDrag.onPointerUp}
+                      onPointerCancel={albumDrag.onPointerCancel}
                     >
                       ≡
                     </div>
@@ -644,22 +655,26 @@ function SideDrawer({
 
                   <div className="truncate font-medium">{a.title}</div>
 
-                  <button className="text-xs text-zinc-500" onClick={()=>onToggleCollapse?.(a.id)}>
-                    {collapsedAlbum ? '▶' : '▼'}
+                  {/* ▶/▼ 收合（穩健：一定使用傳入的 handler） */}
+                  <button
+                    className="text-xs text-zinc-600"
+                    onClick={()=> onToggleCollapse(a.id)}
+                    title={isCollapsed ? '展開' : '收合'}
+                  >
+                    {isCollapsed ? '▶' : '▼'}
                   </button>
                 </div>
 
-                {!collapsedAlbum && (
+                {!isCollapsed && (
                   <ul className="divide-y">
                     {a.songs.map((s, songIdx) => {
-                      const songDrag = useIndexDrag({
-                        index: songIdx,
-                        max: a.songs.length - 1,
-                        onMove: (to) => { if (to !== songIdx) onReorderSong(a.id, songIdx, to); }
+                      const songDrag = useDragToIndex(songIdx, a.songs.length - 1, (to) => {
+                        if (to !== songIdx) onReorderSong(a.id, songIdx, to);
                       });
 
                       return (
                         <li key={s.id} className="flex items-center justify-between p-2">
+                          {/* 歌曲排序把手（僅排序時顯示） */}
                           {sortMode && (
                             <div
                               className="mr-1 select-none rounded-md border px-2 py-1 text-xs touch-none"
@@ -667,6 +682,7 @@ function SideDrawer({
                               onPointerDown={songDrag.onPointerDown}
                               onPointerMove={songDrag.onPointerMove}
                               onPointerUp={songDrag.onPointerUp}
+                              onPointerCancel={songDrag.onPointerCancel}
                             >
                               ≡
                             </div>
@@ -679,8 +695,8 @@ function SideDrawer({
                             {s.title}
                           </button>
 
-                          {/* 手機側欄預設「不是編輯狀態」：這顆刪除鍵只在非排序時顯示；若你要更嚴格，可再加一個「編輯開關」 */}
-                          {!sortMode && (
+                          {/* 編輯模式時才顯示刪除（避免看起來像預設就是編輯狀態） */}
+                          {editMode && !sortMode && (
                             <button
                               onClick={()=>onDeleteSong(a.id,s.id)}
                               className="ml-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs text-red-600 hover:bg-black/5"
@@ -692,6 +708,7 @@ function SideDrawer({
                         </li>
                       );
                     })}
+                    {a.songs.length===0 && <li className="px-2 py-1 text-xs text-zinc-500">（此專輯尚無歌曲）</li>}
                   </ul>
                 )}
               </div>
@@ -702,6 +719,7 @@ function SideDrawer({
     </div>
   );
 }
+
 
 
 
@@ -1186,6 +1204,26 @@ export default function App() {
   const [editMode, setEditMode] = useState(false); // 歌詞編輯預設關閉
   const [query, setQuery] = useState("");
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  // --- 搜尋過濾 ---
+function norm(s: string){ return (s||"").toLowerCase().trim(); }
+function songHit(s: Song, q: string){
+  if (!q) return true;
+  const t = norm(s.title), k = norm(s.lyrics.map(l=>l.kor).join("\n")), z = norm(s.lyrics.map(l=>l.zh).join("\n"));
+  return t.includes(q) || k.includes(q) || z.includes(q);
+}
+const viewData = useMemo<AppData>(() => {
+  const q = norm(query);
+  if (!q) return data;
+  const albums = data.albums
+    .map(a => {
+      const titleHit = norm(a.title).includes(q);
+      const songs = a.songs.filter(s => titleHit || songHit(s, q));
+      return { ...a, songs };
+    })
+    .filter(a => a.songs.length > 0);
+  return { ...data, albums };
+}, [data, query]);
+
   useEffect(() => {
     try { const side = localStorage.getItem('lyrics_sidebar'); if (side === 'closed') setSidebarVisible(false); } catch {}
   }, []);
@@ -1269,6 +1307,7 @@ async function exportCustom(cols: ExportFieldKey[]) {
       }
     }
   }
+  
 
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
@@ -1615,16 +1654,21 @@ function importCSV(file: File) {
             </div>
 
             {/* 桌機：常駐搜尋 + 匯入/匯出、新增 */}
-            <div className="relative ml-auto hidden items-center gap-2 md:flex">
-              <input
-                placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
-                value={query}
-                onChange={e=>setQuery(e.target.value)}
-                className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72"
-              />
-              <DropMenu label="匯入 / 匯出" items={CSVMenu} />
-              <DropMenu label="新增" items={NewMenu} />
-            </div>
+            <form
+  className="relative ml-auto hidden items-center gap-2 md:flex"
+  onSubmit={(e)=>{ e.preventDefault(); /* 即時過濾已生效，這裡只阻止跳頁 */ }}
+>
+  <input
+    placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
+    value={query}
+    onChange={e=>setQuery(e.target.value)}
+    className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72"
+  />
+  <button type="submit" className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5">搜尋</button>
+  <DropMenu label="匯入 / 匯出" items={CSVMenu} />
+  <DropMenu label="新增" items={NewMenu} />
+</form>
+
 
             {/* 手機：放大鏡 */}
             <div className="ml-auto flex items-center gap-2 md:hidden">
@@ -1685,7 +1729,7 @@ function importCSV(file: File) {
           {sidebarVisible && (
             <div className="rounded-xl border bg-white/70 md:w-[317px] md:shrink-0">
               <DesktopSidebar
-                data={data}
+                data={viewData}
                 selected={selected}
                 onSelect={(aid, sid) => setSelected({ albumId: aid, songId: sid })}
                 sortMode={sortMode}
@@ -1722,7 +1766,7 @@ function importCSV(file: File) {
       <SideDrawer
         open={drawerOpen}
         onClose={()=>setDrawerOpen(false)}
-        data={data}
+        data={viewData}
         selected={selected}
         onSelect={(aid,sid)=>setSelected({ albumId: aid, songId: sid })}
         onOpenAddAlbum={()=>setModal({ type: 'album' })}
