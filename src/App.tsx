@@ -508,45 +508,30 @@ function DesktopSidebar({
   );
 }
 
-// === 拖曳小工具：用 Pointer Events 做「跨 iOS/Android/桌機」的穩定排序 ===
-function useReorderDrag(onMovePrev: () => void, onMoveNext: () => void) {
-  const dragging = React.useRef(false);
-  const lastY = React.useRef(0);
-  const buffer = React.useRef(0);
-  const STEP = 28; // 超過這個位移就觸發一次移動（可依行高微調）
+// === 跨 iOS/Android/桌機穩定拖曳：依總位移直接算目標索引（可一次跨多格） ===
+function useIndexDrag(params: { index: number; max: number; onMove: (to: number) => void }) {
+  const startY = React.useRef(0);
+  const active = React.useRef(false);
+  const ROW = 40; // 每一列大約高度（可視狀況微調 36~44）
 
   const onPointerDown = (e: React.PointerEvent) => {
-    dragging.current = true;
-    lastY.current = e.clientY;
-    buffer.current = 0;
+    active.current = true;
+    startY.current = e.clientY;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    // 阻止選字/長按選取，避免反白
     document.body.style.userSelect = 'none';
   };
-
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const dy = e.clientY - lastY.current;
-    lastY.current = e.clientY;
-    buffer.current += dy;
-
-    while (buffer.current >= STEP) {
-      onMoveNext();
-      buffer.current -= STEP;
-    }
-    while (buffer.current <= -STEP) {
-      onMovePrev();
-      buffer.current += STEP;
-    }
+    if (!active.current) return;
+    const dy = e.clientY - startY.current;
+    const delta = Math.round(dy / ROW); // 依總位移算出「跨了幾格」
+    const target = Math.min(params.max, Math.max(0, params.index + delta));
+    if (target !== params.index) params.onMove(target); // 只在目標索引改變時觸發一次
   };
-
   const onPointerUp = (e: React.PointerEvent) => {
-    dragging.current = false;
+    active.current = false;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     document.body.style.userSelect = '';
-    buffer.current = 0;
   };
-
   return { onPointerDown, onPointerMove, onPointerUp };
 }
 
@@ -579,7 +564,7 @@ function SideDrawer({
   onOpenExport: () => void;
   onImport: (file: File) => void;
 }) {
-  // 這行是為了壓掉 TS6133（宣告未使用），保留 API 相容性但不在手機抽屜用到
+  // 壓掉 TS 未使用（保留 API 相容）：手機抽屜不使用這些
   void onDeleteAlbum; void onUpdateAlbum; void onUploadAlbumCover; void onOpenExport; void onImport;
 
   const [newOpen, setNewOpen] = React.useState(false);
@@ -594,7 +579,7 @@ function SideDrawer({
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
             <button
-              onClick={() => { if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
+              onClick={() => { if (editingAlbumId) onToggleAlbumEdit(null); if (sortMode) onToggleSort(); else onToggleSort(); }}
               className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${sortMode ? 'bg-black/5' : ''}`}
               title="切換排序模式（上下移動）"
             >
@@ -633,13 +618,14 @@ function SideDrawer({
         {/* Album + Songs List */}
         <div className="h-[calc(100%-48px)] overflow-y-auto p-2">
           {data.albums.map((a, albumIdx) => {
-            const collapsedAlbum = collapsed[a.id];
+            const collapsedAlbum = collapsed?.[a.id] ?? false; // ← 避免 collapsed 未定義導致白屏
 
-            // 專輯把手（只有在 sortMode 顯示）
-            const albumDrag = useReorderDrag(
-              () => { if (albumIdx > 0) onReorderAlbum(albumIdx, albumIdx - 1); },
-              () => { if (albumIdx < data.albums.length - 1) onReorderAlbum(albumIdx, albumIdx + 1); }
-            );
+            // 專輯把手（sortMode 才顯示）
+            const albumDrag = useIndexDrag({
+              index: albumIdx,
+              max: data.albums.length - 1,
+              onMove: (to) => { if (to !== albumIdx) onReorderAlbum(albumIdx, to); }
+            });
 
             return (
               <div key={a.id} className="mb-2 rounded-lg border">
@@ -658,7 +644,7 @@ function SideDrawer({
 
                   <div className="truncate font-medium">{a.title}</div>
 
-                  <button className="text-xs text-zinc-500" onClick={()=>onToggleCollapse(a.id)}>
+                  <button className="text-xs text-zinc-500" onClick={()=>onToggleCollapse?.(a.id)}>
                     {collapsedAlbum ? '▶' : '▼'}
                   </button>
                 </div>
@@ -666,11 +652,11 @@ function SideDrawer({
                 {!collapsedAlbum && (
                   <ul className="divide-y">
                     {a.songs.map((s, songIdx) => {
-                      // 歌曲把手（只有在 sortMode 顯示）
-                      const songDrag = useReorderDrag(
-                        () => { if (songIdx > 0) onReorderSong(a.id, songIdx, songIdx - 1); },
-                        () => { if (songIdx < a.songs.length - 1) onReorderSong(a.id, songIdx, songIdx + 1); }
-                      );
+                      const songDrag = useIndexDrag({
+                        index: songIdx,
+                        max: a.songs.length - 1,
+                        onMove: (to) => { if (to !== songIdx) onReorderSong(a.id, songIdx, to); }
+                      });
 
                       return (
                         <li key={s.id} className="flex items-center justify-between p-2">
@@ -693,7 +679,7 @@ function SideDrawer({
                             {s.title}
                           </button>
 
-                          {/* 刪除鍵（僅在非排序模式時給刪除；若你不想顯示，可移除此顆） */}
+                          {/* 手機側欄預設「不是編輯狀態」：這顆刪除鍵只在非排序時顯示；若你要更嚴格，可再加一個「編輯開關」 */}
                           {!sortMode && (
                             <button
                               onClick={()=>onDeleteSong(a.id,s.id)}
@@ -716,6 +702,7 @@ function SideDrawer({
     </div>
   );
 }
+
 
 
 
@@ -1652,7 +1639,6 @@ function importCSV(file: File) {
             </div>
           </div>
 
-          /* 手機：點放大鏡才出現的搜尋框 */
           {mobileSearchOpen && (
             <form
               className="pb-3 md:hidden"
