@@ -548,7 +548,7 @@ function SideDrawer({
   onReorderAlbum, onReorderSong, onDeleteSong, onDeleteAlbum,
   collapsed, onToggleCollapse,
   onUpdateAlbum, onUploadAlbumCover,
-  onOpenExport, onImport,
+  onOpenExport, onImport, onDownloadTemplate,
   query, onChangeQuery,
 }: {
   open: boolean; onClose: () => void;
@@ -575,6 +575,7 @@ function SideDrawer({
 
   onOpenExport: () => void;
   onImport: (file: File) => void;
+  onDownloadTemplate: () => void;
 
   query: string; onChangeQuery: (v: string) => void;
 }) {
@@ -630,28 +631,37 @@ function SideDrawer({
                 <>
                   <button
                     className="block w-full px-3 py-1 text-left hover:bg-black/5"
-                    onClick={()=>onOpenExport()}
+                    onClick={() => onOpenExport()}
                   >
                     匯出（自訂欄位，XLSX）
                   </button>
-                  <div className="my-1 border-t" />
-                  <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
-                  匯入（XLSX）
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) onImport(f);
-                      (e.target as HTMLInputElement).value = "";
-                    }}
-                  />
-                </label>
 
+                  <button
+                    className="block w-full px-3 py-1 text-left hover:bg-black/5"
+                    onClick={onDownloadTemplate}
+                  >
+                    下載範本（XLSX）
+                  </button>
+
+                  <div className="my-1 border-t" />
+
+                  <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
+                    匯入（XLSX）
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) onImport(f);
+                        (e.target as HTMLInputElement).value = "";
+                      }}
+                    />
+                  </label>
                 </>
               }
             />
+
 
             <DropMenu
               label="新增"
@@ -1475,42 +1485,46 @@ async function exportCustom(cols: ExportFieldKey[]) {
 
 
  
-      // 範本（只含表頭）：中文欄位、日期格式 YYYY/M/D、兩個欄位加(必填)
-      async function downloadTemplate() {
-        const header = [
-          "專輯名稱(必填)",
-          "專輯封面圖連結",
-          "歌曲名稱(必填)",
-          "專輯上架日(YYYY/M/D)", // ← 改這行
-          "作詞",
-          "作曲",
-          "韓文歌詞",
-          "中文歌詞",
-          "韓文單字",
-          "中文單字",
-          "韓文文法",
-          "文法說明",
-          "文法例句",
-        ];
+      // 範本（只含表頭）：中文欄位、日期改為「專輯上架日(YYYY/M/D)」
+          async function downloadTemplate() {
+            const header = [
+              "專輯名稱(必填)",
+              "專輯封面圖連結",
+              "歌曲名稱(必填)",
+              "專輯上架日(YYYY/M/D)", // ← 已改為「專輯」日期
+              "作詞",
+              "作曲",
+              "韓文歌詞",
+              "中文歌詞",
+              "韓文單字",
+              "中文單字",
+              "韓文文法",
+              "文法說明",
+              "文法例句",
+            ];
 
+            const XLSX = await import("xlsx");
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([header]);
 
-        const XLSX = await import("xlsx");
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet([header]);
-        XLSX.utils.book_append_sheet(wb, ws, "template");
+            // 可選：加點欄寬，避免標題被折行太醜
+            ws["!cols"] = header.map(() => ({ wch: 16 }));
+            XLSX.utils.book_append_sheet(wb, ws, "template");
 
-        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-        const blob = new Blob(
-          [wbout],
-          { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
-        );
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "統一範本.xlsx";
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+            const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+            const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "統一範本.xlsx";
+            a.rel = "noopener";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          }
+
 
 
 
@@ -1728,17 +1742,19 @@ function importCSV(file: File) {
   <>
     <button
       className="block w-full px-3 py-1 text-left hover:bg-black/5"
-      onClick={()=>setExportOpen(true)}
+      onClick={() => setExportOpen(true)}
     >
       匯出（自訂欄位，XLSX）
     </button>
-    <div className="my-1 border-t" />
 
+    <div className="my-1 border-t" />
     <div className="px-3 py-1 text-xs text-zinc-500">下載範本（XLSX）</div>
     <div className="px-2 pb-1">
-      <button className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5"
-              onClick={downloadTemplate}>
-        統一範本（.xlsx）
+      <button
+        className="rounded-md border px-2 py-1 text-left text-xs hover:bg-black/5"
+        onClick={downloadTemplate}
+      >
+        範本（.xlsx）
       </button>
     </div>
 
@@ -1750,7 +1766,7 @@ function importCSV(file: File) {
         type="file"
         className="hidden"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        onChange={e => {
+        onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) importCSV(f);
           (e.target as HTMLInputElement).value = "";
@@ -1759,10 +1775,12 @@ function importCSV(file: File) {
     </label>
 
     <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
-      建議使用<b>統一範本</b>：必填 <b>專輯名稱(必填)、歌曲名稱(必填)</b>；其餘欄位皆為選填（作詞、作曲、歌詞、單字、文法…）。
+      建議使用<b>統一範本</b>：必填 <b>專輯名稱(必填)、歌曲名稱(必填)</b>；其餘欄位皆為選填（作詞、作曲、歌詞、單字、文法…）。<br />
+      日期欄位為 <b>專輯上架日(YYYY/M/D)</b>。
     </div>
   </>
 );
+
 
 
 
@@ -1883,6 +1901,7 @@ function importCSV(file: File) {
         onUploadAlbumCover={uploadAlbumCover}
         onOpenExport={()=>setExportOpen(true)}
         onImport={importCSV}
+        onDownloadTemplate={downloadTemplate}
         query={query}
         onChangeQuery={setQuery}
 
