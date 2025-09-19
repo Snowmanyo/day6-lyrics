@@ -35,6 +35,22 @@ if (typeof document !== 'undefined') {
     document.head.appendChild(style);
   }
 }
+const __MOBILE_INPUT_FIX__ = `
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+`;
+if (typeof document !== 'undefined') {
+  const ID = 'mobile-input-zoom-fix';
+  if (!document.getElementById(ID)) {
+    const style = document.createElement('style');
+    style.id = ID;
+    style.textContent = __MOBILE_INPUT_FIX__;
+    document.head.appendChild(style);
+  }
+}
 
 /* ===================== Types ===================== */
 type LyricLine = { id: string; kor: string; zh: string };
@@ -666,7 +682,7 @@ function SideDrawer({
               placeholder="搜尋：歌名 / 歌詞 / 文法"
               value={query}
               onChange={(e)=>onChangeQuery(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring"
+              className="w-full rounded-lg border px-3 py-2 text-[16px] outline-none focus:ring"
             />
             <button type="submit" className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-black/5">搜尋</button>
           </form>
