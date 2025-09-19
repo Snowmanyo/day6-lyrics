@@ -600,13 +600,13 @@ function SideDrawer({
         <div className="flex items-center justify-between gap-2 border-b p-3">
           <div className="font-semibold">專輯 / 歌曲</div>
           <div className="flex gap-2">
-            <button
+            <ToolbarButton
               onClick={() => { if (editingAlbumId) onToggleAlbumEdit(null); onToggleSort(); }}
-              className={`rounded-lg border px-2 py-1 text-xs hover:bg-black/5 ${sortMode ? 'bg-black/5' : ''}`}
-              title="切換排序模式（拖曳把手移動）"
+              className={sortMode ? 'bg-black/5' : undefined}
             >
               {sortMode ? '完成' : '排序'}
-            </button>
+            </ToolbarButton>
+
 
             <DropMenu
               label="匯入 / 匯出"
@@ -620,18 +620,19 @@ function SideDrawer({
                   </button>
                   <div className="my-1 border-t" />
                   <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
-                    匯入（XLSX / TXT）
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".xlsx,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) onImport(f);
-                        (e.target as HTMLInputElement).value = "";
-                      }}
-                    />
-                  </label>
+                  匯入（XLSX）
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) onImport(f);
+                      (e.target as HTMLInputElement).value = "";
+                    }}
+                  />
+                </label>
+
                 </>
               }
             />
@@ -1726,20 +1727,21 @@ function importCSV(file: File) {
     </div>
 
     <div className="my-1 border-t" />
-    <div className="px-3 py-1 text-xs text-zinc-500">匯入（XLSX / TXT）</div>
+    <div className="px-3 py-1 text-xs text-zinc-500">匯入（XLSX）</div>
     <label className="block w-full cursor-pointer px-3 py-1 text-left hover:bg-black/5">
       選擇檔案
       <input
         type="file"
         className="hidden"
-        accept=".xlsx,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) importCSV(f);                // App 內直接用 importCSV
-          (e.target as HTMLInputElement).value = "";  // 清空，方便選同檔再傳
+          if (f) importCSV(f);
+          (e.target as HTMLInputElement).value = "";
         }}
       />
     </label>
+
     <div className="px-3 pb-2 pt-1 text-[11px] leading-5 text-zinc-500">
       建議使用<b>統一範本</b>：必填 <b>專輯名稱(必填)、歌曲名稱(必填)</b>；其餘欄位皆為選填（作詞、作曲、歌詞、單字、文法…）。
     </div>
