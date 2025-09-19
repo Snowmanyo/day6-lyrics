@@ -677,16 +677,16 @@ function SideDrawer({
 
         {/* Sticky：只留搜尋 */}
         <div className="sticky top-0 z-[1] border-b bg-white/95 px-2 py-2 backdrop-blur">
-          <form onSubmit={(e)=>{ e.preventDefault(); }} className="flex items-center gap-2">
-            <input
-              placeholder="搜尋：歌名 / 歌詞 / 文法"
-              value={query}
-              onChange={(e)=>onChangeQuery(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-[16px] outline-none focus:ring"
-            />
-            <button type="submit" className="shrink-0 rounded-lg border px-3 py-2 text-sm hover:bg-black/5">搜尋</button>
-          </form>
+        <div className="flex items-center gap-2">
+          <input
+            placeholder="搜尋：歌名 / 歌詞 / 文法"
+            value={query}
+            onChange={(e)=>onChangeQuery(e.target.value)}
+            className="w-full rounded-lg border px-3 py-2 text-[16px] outline-none focus:ring"
+          />
         </div>
+      </div>
+
 
         {/* Album + Songs */}
         <div className="h-[calc(100%-140px)] overflow-y-auto p-2">
@@ -1782,38 +1782,34 @@ function importCSV(file: File) {
       <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
   <div className="mx-auto max-w-[1280px] px-4">
     <div className="flex flex-nowrap items-center gap-2 py-3">
-      <button
-        className="shrink-0 rounded-lg border px-2 py-1 text-sm hover:bg-black/5"
-        title="切換側邊選單"
+      <ToolbarButton
         onClick={() => {
           if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) toggleSidebar();
           else setDrawerOpen(true);
         }}
+        className="text-sm"
       >
         {HAMBURGER} 選單
-      </button>
+      </ToolbarButton>
+
+
 
       <div className="min-w-0 shrink-0 truncate whitespace-nowrap text-xl font-bold">
         DAY6 歌詞學韓文
       </div>
 
       {/* 桌機：常駐搜尋 + 匯入/匯出、新增 */}
-      <form
-        className="relative ml-auto hidden items-center gap-2 md:flex"
-        onSubmit={(e)=>{ e.preventDefault(); /* 即時過濾已生效 */ }}
-      >
+      <div className="relative ml-auto hidden items-center gap-2 md:flex">
         <input
-          placeholder="搜尋：歌名 / 歌詞 / 單字 / 文法"
+          placeholder="搜尋：歌名 / 歌詞 / 文法"
           value={query}
           onChange={e=>setQuery(e.target.value)}
           className="w-[52vw] max-w-[420px] rounded-xl border px-3 py-1.5 text-sm outline-none focus:ring md:w-72"
         />
-        <button type="submit" className="shrink-0 rounded-lg border px-3 py-1.5 text-sm hover:bg-black/5">
-          搜尋
-        </button>
         <DropMenu label="匯入 / 匯出" items={CSVMenu} />
         <DropMenu label="新增" items={NewMenu} />
-      </form>
+      </div>
+
 
       {/* 手機：這裡不再顯示放大鏡，改在側欄內建搜尋 */}
       <div className="ml-auto md:hidden" />
